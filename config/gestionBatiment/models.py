@@ -3,10 +3,8 @@ from django.contrib.auth.models import User
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
 from django.core.exceptions import ValidationError
-from django.utils import timezone  # Ajouté pour gérer la date du jour
+from django.utils import timezone 
 from decimal import Decimal
-from django.db.models.signals import post_save
-from django.dispatch import receiver
 
 class Client(models.Model):
     class UserRole(models.TextChoices):
@@ -15,14 +13,9 @@ class Client(models.Model):
         MANAGER = 'MANAGER', _('Gestionnaire')
         CLIENT = 'CLIENT', _('Personnel')
 
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True, related_name='client_profile')
-    # Nouvelle catégorie pour gérer les permissions dans les views
-    role = models.CharField(
-        max_length=15,
-        choices=UserRole.choices,
-        default=UserRole.CLIENT
-    )
-    
+    id = models.AutoField(primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='client_profile')
+    role = models.CharField(max_length=15, choices=UserRole.choices, default=UserRole.CLIENT)
     telephone = PhoneNumberField(region='CM', blank=True, null=True)
     addresse = models.CharField(max_length=255, blank=True, null=True)
     date_naissance = models.DateField(blank=True, null=True)
@@ -30,21 +23,7 @@ class Client(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return self.user.get_full_name() or self.user.username
-
-
-@receiver(post_save, sender=User)
-def create_or_save_client_profile(sender, instance, created, **kwargs):
-    """
-    Dès qu'un User est créé, un Client est créé automatiquement avec le même ID.
-    Si l'User est mis à jour, le Client est sauvegardé.
-    """
-    if created:
-        Client.objects.create(user=instance)
-    else:
-        if hasattr(instance, 'client_profile'):
-            instance.client_profile.save()
-
+        return f"[{self.get_role_display()}] {self.user.get_full_name()}"
 
 
 class Batiment(models.Model):
@@ -70,10 +49,11 @@ class Batiment(models.Model):
 
     @property
     def revenues_totaux(self):
-        return sum(p.montant for p in Paiement.objects.filter(
+        resultat = Paiement.objects.filter(
             contrat__reservation__bureau__batiment=self,
             statut='PAID'
-        ))
+        ).aggregate(total=models.Sum('montant'))
+        return resultat['total'] or Decimal('0.00')
 
 
 class Niveau(models.Model):
@@ -93,16 +73,17 @@ class Niveau(models.Model):
         if total_bureaux == 0:
             return 0.0
         bureaux_occupes = self.bureaux.filter(locations__is_active=True).distinct().count()
-        return round((bureaux_occupes / total_bureaux) * 100)
+        return round((bureaux_occupes / total_bureaux) * 100, 2)
 
     @property
     def revenues_totaux(self):
-        return sum(p.montant for p in Paiement.objects.filter(
+        resultat = Paiement.objects.filter(
             contrat__reservation__bureau__niveau=self,
             statut='PAID'
-        ))
-    
-    
+        ).aggregate(total=models.Sum('montant'))
+        return resultat['total'] or Decimal('0.00')
+
+
 class TypeBureau(models.Model):
     id = models.AutoField(primary_key=True)
     nom = models.CharField(max_length=50)
@@ -112,7 +93,7 @@ class TypeBureau(models.Model):
 
     def __str__(self):
         return self.nom
-    
+
 
 class Bureau(models.Model):
     id = models.AutoField(primary_key=True)
@@ -142,11 +123,12 @@ class Bureau(models.Model):
             })
 
     def save(self, *args, **kwargs):
+        # Force l'exécution de la validation avant la sauvegarde
+        self.full_clean()
         self.prix = Decimal(str(self.espace)) * self.unite
         self.prix = self.prix.quantize(Decimal('0.01'))
-        self.full_clean()
         super().save(*args, **kwargs)
-    
+
 
 class Reservation(models.Model):
     id = models.AutoField(primary_key=True)
@@ -159,9 +141,8 @@ class Reservation(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='reservations')
     
     def __str__(self):
-        return f"Réservation du {self.date_debut} au {self.date_fin} - {self.client.user.first_name} {self.client.user.last_name}"
+        return f"Réservation du {self.date_debut} au {self.date_fin} - {self.client.user.get_full_name()}"
     
-    # --- STATUT TEMPOREL DYNAMIQUE ---
     @property
     def statut_temporel(self):
         aujourdhui = timezone.now().date()
@@ -176,10 +157,8 @@ class Reservation(models.Model):
     def clean(self):
         super().clean()
         if self.date_debut and self.date_fin and self.date_fin < self.date_debut:
-            raise ValidationError ({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
+            raise ValidationError({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
         
-# pour concerve les dates de reservation coherentes et eviter les conflits de reservation
-
         if self.date_debut and self.date_fin and self.bureau:
             chevauchements = Reservation.objects.filter(
                 bureau=self.bureau,
@@ -193,7 +172,7 @@ class Reservation(models.Model):
                 raise ValidationError({'date_debut': _("Ce bureau est déjà réservé pour tout ou partie de ces dates.")})
 
     def save(self, *args, **kwargs):
-        self.full_clean()  
+        self.full_clean()
         super().save(*args, **kwargs)
         
         
@@ -210,9 +189,8 @@ class Contrat(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Contrat du {self.date_debut} au {self.date_fin} - {self.client.user.first_name} {self.client.user.last_name}"
+        return f"Contrat du {self.date_debut} au {self.date_fin} - {self.client.user.get_full_name()}"
     
-    # --- STATUT TEMPOREL DYNAMIQUE ---
     @property
     def statut_temporel(self):
         aujourdhui = timezone.now().date()
@@ -226,17 +204,19 @@ class Contrat(models.Model):
 
     def clean(self):
         super().clean()
-        if self.montant is not None and self.montant <= Decimal('0.00'):
-            raise ValidationError({'montant': _("Le montant du contrat doit être strictement supérieur à 0.")})
         if self.date_debut and self.date_fin and self.date_fin < self.date_debut:
             raise ValidationError({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
 
     def save(self, *args, **kwargs):
+        # On calcule le montant fixe du contrat basé sur la valeur du bureau à la signature
         if self.date_debut and self.date_fin and self.reservation and self.reservation.bureau:
             delta = self.date_fin - self.date_debut
             nombre_jours = max(delta.days, 0)
             prix_bureau = self.reservation.bureau.prix or Decimal('0.00')
             self.montant = Decimal(nombre_jours) * prix_bureau
+        
+        if self.montant is not None and self.montant <= Decimal('0.00'):
+            raise ValidationError({'montant': _("Le montant calculé du contrat doit être strictement supérieur à 0.")})
             
         self.full_clean()
         super().save(*args, **kwargs)
@@ -253,12 +233,10 @@ class Location(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Location du {self.date_debut} au {self.date_fin} - {self.client.user.first_name} {self.client.user.last_name}"
+        return f"Location du {self.date_debut} au {self.date_fin} - {self.client.user.get_full_name()}"
 
-    # --- STATUT TEMPOREL DYNAMIQUE ---
     @property
     def statut_temporel(self):
-        """ Détermine le statut de la location par rapport à la date réelle d'aujourd'hui """
         aujourdhui = timezone.now().date()
         if self.date_debut and aujourdhui < self.date_debut:
             return "À VENIR"
@@ -281,6 +259,7 @@ class Location(models.Model):
 class Paiement(models.Model):
     class PaiementStatus(models.TextChoices):
         PENDING = 'PENDING', _('En attente')
+        PENDING_ADMIN = 'PENDING_ADMIN', _('En attente Administrateur')
         COMPLETED = 'PAID', _('Payé')
         FAILED = 'FAILED', _('Échoué') 
         
@@ -289,7 +268,6 @@ class Paiement(models.Model):
     date = models.DateField(null=True, blank=True)
     mode = models.CharField(max_length=20, choices=[('CASH', 'Espèces'), ('CARD', 'Carte bancaire'), ('TRANSFER', 'Virement bancaire')], default='CASH')
     
-    # Relations connectées
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, related_name='paiements', null=True, blank=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='paiements')
     contrat = models.ForeignKey(Contrat, on_delete=models.CASCADE, related_name='paiements', null=True, blank=True)
@@ -300,16 +278,13 @@ class Paiement(models.Model):
     is_active = models.BooleanField(default=True)
     
     def __str__(self):
-        return f"Paiement de {self.montant}€ [{self.get_statut_display()}] - {self.client.user.first_name} {self.client.user.last_name}"
+        return f"Paiement de {self.montant} F CFA [{self.get_statut_display()}] - {self.client.user.get_full_name()}"
 
-    # --- SÉCURITÉ DE PAIEMENT BASÉE SUR LES STATUTS TEMPORELS ---
-    
     def clean(self):
         super().clean()
         if self.montant is not None and self.montant <= Decimal('0.00'):
             raise ValidationError({'montant': _("Le montant du paiement doit être strictement supérieur à 0.")})
 
-        # Sécurité : Empêcher d'encaisser de l'argent sur un contrat ou une location EXPIRÉ(E)
         if self.contrat and self.contrat.statut_temporel == "EXPIRÉ":
             raise ValidationError({'contrat': _("Impossible d'enregistrer un paiement pour un contrat expiré.")})
             
@@ -317,18 +292,15 @@ class Paiement(models.Model):
             raise ValidationError({'location': _("Impossible d'enregistrer un paiement pour une location expirée.")})
 
     def save(self, *args, **kwargs):
-        # Récupérer l'utilisateur qui fait l'action (passé depuis la vue)
+        # CORRECTION : Extraction ou vérification du contexte utilisateur s'il est injecté par l'API ou le signal
         user_performing_action = kwargs.pop('user', None)
 
         if user_performing_action and hasattr(user_performing_action, 'client_profile'):
             role_utilisateur = user_performing_action.client_profile.role
-            
-            # --- APPLICATION DE LA PROPOSITION 2 ---
-            # Si le montant dépasse 100 000 CFA et que c'est un travailleur qui tente de valider directement en 'PAID'
-            if self.montant > Decimal('100000.00') and role_utilisateur in ['AGENT', 'TRAVAILLEUR', 'MANAGER'] and self.statut == 'PAID':
-                # On force le statut en attente de l'administrateur
+            if self.montant > Decimal('100000.00') and role_utilisateur in ['TRAVAILLEUR', 'MANAGER', 'CLIENT'] and self.statut == 'PAID':
                 self.statut = self.PaiementStatus.PENDING_ADMIN
-        self.full_clean()  
+
+        self.full_clean()
         super().save(*args, **kwargs)
 
     @property

@@ -3,17 +3,15 @@ from django.shortcuts import render
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import viewsets, status
-from rest_framework import permissions
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
+
 from .serializers import (
     ClientSerializer, BatimentSerializer, NiveauSerializer, 
     TypeBureauSerializer, BureauSerializer, LocationSerializer,
-    ContratSerializer, PaiementSerializer, 
-    ReservationSerializer
-
+    ContratSerializer, PaiementSerializer, ReservationSerializer
 )
 from .models import Client, Batiment, TypeBureau, Bureau, Niveau, Contrat, Location, Paiement, Reservation
 from .permissions import (
@@ -25,7 +23,7 @@ from .permissions import (
 
 
 class BaseModelViewSet(viewsets.ModelViewSet):
-    """Base viewset that converts Django ValidationError into DRF HTTP 400 responses."""
+    """Base viewset qui convertit proprement les Django ValidationError en HTTP 400 DRF."""
 
     def _format_django_validation_error(self, exc):
         if hasattr(exc, 'message_dict'):
@@ -64,6 +62,8 @@ class BaseModelViewSet(viewsets.ModelViewSet):
 
     def get_user_role(self):
         user = self.request.user
+        if not user or user.is_anonymous:
+            return None
         if user.is_superuser:
             return ADMIN_ROLE
 
@@ -77,19 +77,19 @@ class BaseModelViewSet(viewsets.ModelViewSet):
         for role in WORKER_ROLES:
             if role in groups:
                 return role
-        if CLIENT_ROLES[0] in groups:
+        if CLIENT_ROLES and CLIENT_ROLES[0] in groups:
             return CLIENT_ROLES[0]
         return None
 
 
-# ==================== Vues simples ====================
+# ==================== Vues Classiques (HTML) ====================
 
 def hello(request):
     return HttpResponse('<h1>Bienvenue dans la gestion de bâtiments!</h1>')
 
 def index(request):
     batiments = Batiment.objects.all()
-    bureaux = Bureau.objects.all()
+    bureaux = Bureau.objects.select_related('batiment', 'type', 'niveau').all()
     context = {
         'batiments': batiments,
         'bureaux': bureaux,
@@ -98,36 +98,35 @@ def index(request):
     }
     return render(request, 'gestionBatiment/index.html', context)
 
+
 # ==================== ViewSets API REST ====================
 
 class ClientViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Clients"""
     serializer_class = ClientSerializer
     permission_classes = [ClientPermission]
+    ordering = ['user_id']
 
     def get_queryset(self):
-        user = self.request.user
-        profile = self.get_client_profile()
         role = self.get_user_role()
+        profile = self.get_client_profile()
+        base_query = Client.objects.select_related('user')
 
+        # CORRECTION SÉCURITÉ : Un client ne peut pas lister les autres clients
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Client.objects.all()
-
+            return base_query.all().order_by('user_id')
         if role in CLIENT_ROLES and profile is not None:
-            return Client.objects.filter(user=user)
-
+            return base_query.filter(id=profile.id)
+        
         return Client.objects.none()
 
-    def perform_create(self, serializer):
-        profile = self.get_client_profile()
-        role = self.get_user_role()
-        if role in CLIENT_ROLES and profile is None:
-            serializer.save(user=self.request.user)
-        else:
-            serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
+    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='inscription')
+    def inscription(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            client = serializer.save()
+            return Response(self.get_serializer(client).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class BatimentViewSet(BaseModelViewSet):
@@ -140,12 +139,6 @@ class BatimentViewSet(BaseModelViewSet):
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return Batiment.objects.all()
         return Batiment.objects.none()
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
 
     @action(detail=False, methods=['get'], url_path='actifs')
     def actifs(self, request):
@@ -173,14 +166,8 @@ class NiveauViewSet(BaseModelViewSet):
     def get_queryset(self):
         role = self.get_user_role()
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Niveau.objects.all()
+            return Niveau.objects.select_related('batiment').all()
         return Niveau.objects.none()
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
 
     @action(detail=False, methods=['get'], url_path='par-batiment/(?P<batiment_id>[0-9]+)')
     def par_batiment(self, request, batiment_id=None):
@@ -200,18 +187,6 @@ class TypeBureauViewSet(BaseModelViewSet):
             return TypeBureau.objects.all()
         return TypeBureau.objects.none()
 
-    def perform_create(self, serializer):
-        serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
-
-    @action(detail=False, methods=['get'], url_path='actifs')
-    def actifs(self, request):
-        types_bureau = TypeBureau.objects.filter(is_active=True)
-        serializer = self.get_serializer(types_bureau, many=True)
-        return Response(serializer.data)
-
 
 class BureauViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Bureaux"""
@@ -219,41 +194,36 @@ class BureauViewSet(BaseModelViewSet):
     permission_classes = [BureauPermission]
 
     def get_queryset(self):
-        user = self.request.user
-        profile = self.get_client_profile()
         role = self.get_user_role()
+        profile = self.get_client_profile()
+        today = timezone.now().date()
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Bureau.objects.all()
+            return Bureau.objects.select_related('batiment', 'type', 'niveau').all()
 
         if role in CLIENT_ROLES and profile is not None:
-            bureaux_reserves = Bureau.objects.filter(reservations__client=profile, reservations__is_active=True)
-            bureaux_libres = Bureau.objects.filter(is_active=True).exclude(
+            base_queryset = Bureau.objects.select_related('batiment', 'type', 'niveau')
+            bureaux_reserves = base_queryset.filter(reservations__client=profile, reservations__is_active=True)
+            
+            # CORRECTION : Filtrage temporel précis (Vérifie si aujourd'hui est compris dans les dates)
+            bureaux_libres = base_queryset.filter(is_active=True).exclude(
                 reservations__is_active=True,
-                reservations__date_fin__gte=timezone.now().date()
+                reservations__date_debut__lte=today,
+                reservations__date_fin__gte=today
             )
             return (bureaux_reserves | bureaux_libres).distinct()
 
         return Bureau.objects.none()
 
-    def perform_create(self, serializer):
-        serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save()
-
-    @action(detail=False, methods=['get'], url_path='par-type/(?P<type_id>[0-9]+)')
-    def par_type(self, request, type_id=None):
-        bureaux = Bureau.objects.filter(type_id=type_id, is_active=True)
-        serializer = self.get_serializer(bureaux, many=True)
-        return Response(serializer.data)
-
     @action(detail=False, methods=['get'], url_path='disponibles')
     def disponibles(self, request):
+        today = timezone.now().date()
+        # CORRECTION : Filtrage temporel précis
         livres = Bureau.objects.filter(is_active=True).exclude(
             reservations__is_active=True,
-            reservations__date_fin__gte=timezone.now().date()
-        )
+            reservations__date_debut__lte=today,
+            reservations__date_fin__gte=today
+        ).select_related('batiment', 'type', 'niveau')
         serializer = self.get_serializer(livres.distinct(), many=True)
         return Response(serializer.data)
 
@@ -266,30 +236,19 @@ class ReservationViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
+        query = Reservation.objects.select_related('bureau', 'client__user')
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Reservation.objects.all()
-
+            return query.all()
         if role in CLIENT_ROLES and profile is not None:
-            return Reservation.objects.filter(client=profile)
-
+            return query.filter(client=profile)
         return Reservation.objects.none()
 
     def perform_create(self, serializer):
-        profile = self.get_client_profile()
-        if profile and self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=profile)
+        if self.get_user_role() in CLIENT_ROLES:
+            serializer.save(client=self.get_client_profile())
         else:
             serializer.save()
-
-    @action(detail=False, methods=['get'], url_path='mes-reservations')
-    def mes_reservations(self, request):
-        profile = self.get_client_profile()
-        if profile is None:
-            return Response([], status=status.HTTP_200_OK)
-        reservations = Reservation.objects.filter(client=profile)
-        serializer = self.get_serializer(reservations, many=True)
-        return Response(serializer.data)
 
 
 class ContratViewSet(BaseModelViewSet):
@@ -300,30 +259,19 @@ class ContratViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
+        query = Contrat.objects.select_related('reservation', 'client__user')
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Contrat.objects.all()
-
+            return query.all()
         if role in CLIENT_ROLES and profile is not None:
-            return Contrat.objects.filter(client=profile)
-
+            return query.filter(client=profile)
         return Contrat.objects.none()
 
     def perform_create(self, serializer):
-        profile = self.get_client_profile()
-        if profile and self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=profile)
+        if self.get_user_role() in CLIENT_ROLES:
+            serializer.save(client=self.get_client_profile())
         else:
             serializer.save()
-
-    @action(detail=False, methods=['get'], url_path='mes-contrats')
-    def mes_contrats(self, request):
-        profile = self.get_client_profile()
-        if profile is None:
-            return Response([], status=status.HTTP_200_OK)
-        contrats = Contrat.objects.filter(client=profile)
-        serializer = self.get_serializer(contrats, many=True)
-        return Response(serializer.data)
 
 
 class LocationViewSet(BaseModelViewSet):
@@ -334,30 +282,19 @@ class LocationViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
+        query = Location.objects.select_related('bureau', 'client__user')
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Location.objects.all()
-
+            return query.all()
         if role in CLIENT_ROLES and profile is not None:
-            return Location.objects.filter(client=profile)
-
+            return query.filter(client=profile)
         return Location.objects.none()
 
     def perform_create(self, serializer):
-        profile = self.get_client_profile()
-        if profile and self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=profile)
+        if self.get_user_role() in CLIENT_ROLES:
+            serializer.save(client=self.get_client_profile())
         else:
             serializer.save()
-
-    @action(detail=False, methods=['get'], url_path='mes-locations')
-    def mes_locations(self, request):
-        profile = self.get_client_profile()
-        if profile is None:
-            return Response([], status=status.HTTP_200_OK)
-        locations = Location.objects.filter(client=profile)
-        serializer = self.get_serializer(locations, many=True)
-        return Response(serializer.data)
 
 
 class PaiementViewSet(BaseModelViewSet):
@@ -368,24 +305,21 @@ class PaiementViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
+        query = Paiement.objects.select_related('location', 'client__user', 'contrat')
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return Paiement.objects.all()
-
+            return query.all()
         if role in CLIENT_ROLES and profile is not None:
-            return Paiement.objects.filter(client=profile)
-
+            return query.filter(client=profile)
         return Paiement.objects.none()
 
     def perform_create(self, serializer):
-        profile = self.get_client_profile()
-        if profile and self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=profile)
-            return
-
-        validated = getattr(serializer, 'validated_data', {})
+        validated = serializer.validated_data
         client = validated.get('client')
-        if not client:
+        
+        if self.get_user_role() in CLIENT_ROLES:
+            client = self.get_client_profile()
+        elif not client:
             contrat = validated.get('contrat')
             location = validated.get('location')
             if contrat:
@@ -393,20 +327,5 @@ class PaiementViewSet(BaseModelViewSet):
             elif location:
                 client = location.client
 
-        if client:
-            serializer.save(client=client)
-        else:
-            serializer.save()
-
-    def perform_update(self, serializer):
-        serializer.save(user=self.request.user)
-
-    @action(detail=False, methods=['get'], url_path='mes-paiements')
-    def mes_paiements(self, request):
-        profile = self.get_client_profile()
-        if profile is None:
-            return Response([], status=status.HTTP_200_OK)
-        paiements = Paiement.objects.filter(client=profile)
-        serializer = self.get_serializer(paiements, many=True)
-        return Response(serializer.data)
-    
+        # Sauvegarde sécurisée
+        serializer.save(client=client)
