@@ -1,1 +1,127 @@
-POST
+POST http://localhost:8000/api/clients/
+Content-Type: application/json
+
+{
+    "user":"11",
+    "telephone":"+25768260328",
+    "addresse":"kigobe",
+    "date_naissance":"2000-03-5",
+}
+
+###
+POST http://localhost:8000/api/batiments/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/types-bureau/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/niveaux/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/bureaux/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/reservations/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/contrats/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/api/locations/
+Content-Type: application/json
+
+{
+    
+}
+
+###
+POST http://localhost:8000/paiements
+Content-Type: application/json
+
+{
+    
+}
+
+###
+GET http://localhost:8000/api/clients/
+
+###
+GET http://localhost:8000/api/batiments/
+
+###
+GET http://localhost:8000/api/types-bureau/
+
+###
+GET http://localhost:8000/api/niveaux/
+
+###
+GET http://localhost:8000/api/bureaux/
+
+###
+GET http://localhost:8000/api/reservations/
+
+###
+GET http://localhost:8000/api/contrats/
+
+###
+GET http://localhost:8000/api/locations/
+
+###
+GET http://localhost:8000/api/paiements/
+
+###
+DELETE http://localhost:8000/api/clients/
+
+###
+DELETE http://localhost:8000/api/batiments/
+
+###
+DELETE http://localhost:8000/api/types-bureau/
+
+###
+DELETE http://localhost:8000/api/niveaux/
+
+###
+DELETE http://localhost:8000/api/bureaux/
+
+###
+DELETE http://localhost:8000/api/reservations/
+
+###
+DELETE http://localhost:8000/api/contrats/
+
+###
+DELETE http://localhost:8000/api/locations/
+
+###
+DELETE http://localhost:8000/api/paiements/
