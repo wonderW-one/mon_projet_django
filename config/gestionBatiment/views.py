@@ -116,7 +116,7 @@ class ClientViewSet(BaseModelViewSet):
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return base_query.all().order_by('user_id')
         if role in CLIENT_ROLES and profile is not None:
-            return base_query.filter(id=profile.id)
+            return base_query.filter(user_id=profile.user_id)
         
         return Client.objects.none()
 
@@ -244,11 +244,48 @@ class ReservationViewSet(BaseModelViewSet):
             return query.filter(client=profile)
         return Reservation.objects.none()
 
+    def get_serializer(self, *args, **kwargs):
+        """Filtre dynamiquement les choix de bureaux visibles pour le client."""
+        serializer = super().get_serializer(*args, **kwargs)
+        
+        # Sécurité : On extrait le vrai sérialiseur d'objet si DRF manipule une liste
+        instance_serializer = serializer.child if hasattr(serializer, 'child') else serializer
+
+        if 'bureau' in instance_serializer.fields:
+            role = self.get_user_role()
+            
+            # Un client ne devrait pouvoir réserver que des bureaux actifs
+            if role in CLIENT_ROLES:
+                instance_serializer.fields['bureau'].queryset = Bureau.objects.filter(is_active=True)
+            else:
+                instance_serializer.fields['bureau'].queryset = Bureau.objects.all()
+                
+        return serializer
+
     def perform_create(self, serializer):
-        if self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=self.get_client_profile())
+        role = self.get_user_role()
+        
+        if role in CLIENT_ROLES:
+            client = self.get_client_profile()
+            if not client:
+                raise DRFValidationError({
+                    "detail": "Votre compte utilisateur ne possède pas de profil Client actif."
+                })
         else:
-            serializer.save()
+            # Récupération manuelle pour l'admin car le champ client est en read_only
+            client_id = self.request.data.get('client')
+            if not client_id:
+                raise DRFValidationError({
+                    "client": "Ce champ est obligatoire pour les administrateurs et gestionnaires."
+                })
+            try:
+                client = Client.objects.get(pk=client_id)
+            except Client.DoesNotExist:
+                raise DRFValidationError({
+                    "client": "Le client spécifié n'existe pas."
+                })
+
+        serializer.save(client=client)
 
 
 class ContratViewSet(BaseModelViewSet):
@@ -267,11 +304,49 @@ class ContratViewSet(BaseModelViewSet):
             return query.filter(client=profile)
         return Contrat.objects.none()
 
+    def get_serializer(self, *args, **kwargs):
+        # On s'assure que le contexte de la requête est bien transmis au sérialiseur
+        kwargs['context'] = self.get_serializer_context()
+        serializer = super().get_serializer(*args, **kwargs)
+        
+        instance_serializer = serializer.child if hasattr(serializer, 'child') else serializer
+        
+        if 'reservation' in instance_serializer.fields:
+            role = self.get_user_role()
+            profile = self.get_client_profile()
+
+            if role in CLIENT_ROLES and profile is not None:
+                instance_serializer.fields['reservation'].queryset = Reservation.objects.filter(
+                    client=profile, 
+                    is_active=True
+                )
+            else:
+                instance_serializer.fields['reservation'].queryset = Reservation.objects.all()
+                
+        return serializer
+        
     def perform_create(self, serializer):
-        if self.get_user_role() in CLIENT_ROLES:
-            serializer.save(client=self.get_client_profile())
+        role = self.get_user_role()
+        reservation = serializer.validated_data.get('reservation')
+        
+        if not reservation:
+            raise DRFValidationError({
+                "reservation": "Une réservation valide est obligatoire pour générer un contrat."
+            })
+
+        if role in CLIENT_ROLES:
+            client_connecte = self.get_client_profile()
+            
+            # Double protection si l'identifiant est forcé en brut via l'API
+            if reservation.client != client_connecte:
+                raise DRFValidationError({
+                    "reservation": "Cette réservation ne vous appartient pas."
+                })
+                
+            serializer.save(client=client_connecte)
         else:
-            serializer.save()
+            # Déduction automatique du client pour simplifier le travail de l'admin
+            serializer.save(client=reservation.client)
 
 
 class LocationViewSet(BaseModelViewSet):

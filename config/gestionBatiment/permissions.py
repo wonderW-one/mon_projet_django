@@ -77,7 +77,7 @@ class ClientPermission(BaseRolePermission):
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
             # Un client ne peut voir/modifier QUE son propre profil
-            if user_client and obj.id == user_client.id:
+            if user_client and obj.user == user_client.user:
                 return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
         
         return False
@@ -158,7 +158,7 @@ class ReservationPermission(BaseRolePermission):
         
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            return user_client and obj.client_id == user_client.id and request.method in SAFE_METHODS
+            return user_client and obj.client_id == user_client.user and request.method in SAFE_METHODS
         return False
 
 
@@ -181,7 +181,7 @@ class ContratPermission(BaseRolePermission):
         
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            if user_client and obj.client_id == user_client.id:
+            if user_client and obj.client_id == user_client.user:
                 return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
         return False
 
@@ -266,11 +266,11 @@ class PaiementPermission(BaseRolePermission):
             # CORRECTION CRITIQUE : Résolution dynamique et sécurisée du propriétaire du paiement
             # On vérifie de manière cascade si le paiement appartient au client connecté
             is_owner = False
-            if obj.client_id == user_client.id:
+            if obj.client_id == user_client.user:
                 is_owner = True
-            elif obj.contrat and obj.contrat.client_id == user_client.id:
+            elif obj.contrat and obj.contrat.client_id == user_client.user:
                 is_owner = True
-            elif obj.location and obj.location.client_id == user_client.id:
+            elif obj.location and obj.location.client_id == user_client.user:
                 is_owner = True
                 
             if is_owner:

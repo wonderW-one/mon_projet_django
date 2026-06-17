@@ -3,6 +3,33 @@ from django.contrib.auth.models import User
 from django.db import transaction
 from .models import Client, Batiment, Niveau, TypeBureau, Bureau, Reservation, Contrat, Location, Paiement
 
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+
+# ---Token---
+class MonTokenObtainPairSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # On cherche si l'utilisateur possède un profil Client
+        try:
+            client_profile = Client.objects.get(user=user)
+            # On ajoute le rôle directement dans le payload du JWT
+            token['role'] = str(client_profile.role)
+        except Client.DoesNotExist:
+            # Si l'utilisateur n'a pas de profil Client (ex: Superuser Django)
+            if user.is_superuser:
+                token['role'] = 'ADMIN'
+            else:
+                token['role'] = 'CLIENT' # Rôle par défaut de sécurité
+
+        return token
+
+class MonTokenObtainPairView(TokenObtainPairView):
+    serializer_class = MonTokenObtainPairSerializer
+    
 # --- SÉRIALISEURS COMPACTS DE LECTURE (Pour la réutilisation) ---
 
 class UserDetailSerializer(serializers.ModelSerializer):
@@ -17,7 +44,7 @@ class ClientDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Client
-        fields = ['id', 'user', 'telephone', 'addresse', 'date_naissance']
+        fields = ['user_id', 'user', 'telephone', 'addresse', 'date_naissance']
 
     def get_telephone(self, obj):
         return str(obj.telephone) if obj.telephone else None
@@ -153,19 +180,33 @@ class BureauSerializer(serializers.ModelSerializer):
 
 
 class ContratSerializer(serializers.ModelSerializer):
+    client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
+
     class Meta:
         model = Contrat
         fields = '__all__'
-        # CORRECTION : 'client' ajouté en read_only car assigné automatiquement par la vue
-        read_only_fields = ['created_at', 'updated_at', 'montant', 'client'] 
+        read_only_fields = ['created_at', 'updated_at', 'montant'] # On enlève 'client' d'ici
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
+        # On récupère la requête HTTP pour connaître l'utilisateur connecté
+        request = self.context.get('request')
+        if request and request.user:
+            # Si l'utilisateur n'est PAS admin (c'est un client)
+            if not request.user.is_superuser and not request.user.groups.filter(name='ADMIN').exists():
+                # On passe le champ client en lecture seule -> il disparaît du formulaire de saisie !
+                self.fields['client'].read_only = True
+
         
 class LocationSerializer(serializers.ModelSerializer):
     client_detail = serializers.SerializerMethodField(read_only=True)
+    client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
+    bureau_name = serializers.CharField(source='bureau.numero', read_only=True)
 
     class Meta:
         model = Location
-        fields = ['id', 'date_debut', 'date_fin', 'bureau', 'client', 'client_detail', 'created_at', 'updated_at', 'is_active']
+        fields = ['id', 'date_debut', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['client'] # CORRECTION : Évite le blocage à la création par le client
 
     def get_client_detail(self, obj):
@@ -174,11 +215,12 @@ class LocationSerializer(serializers.ModelSerializer):
 
 class PaiementSerializer(serializers.ModelSerializer):
     client_detail = serializers.SerializerMethodField(read_only=True)
+    client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
     montant = serializers.DecimalField(max_digits=10, decimal_places=2)
     
     class Meta:
         model = Paiement
-        fields = ['id', 'date', 'montant', 'mode', 'location', 'client', 'client_detail', 'contrat', 'statut', 'created_at', 'updated_at', 'is_active']
+        fields = ['id', 'date', 'montant', 'mode', 'location', 'client', 'client_prenom', 'client_detail', 'contrat', 'statut', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['client'] # CORRECTION
 
     def get_client_detail(self, obj):
@@ -188,10 +230,12 @@ class PaiementSerializer(serializers.ModelSerializer):
 class ReservationSerializer(serializers.ModelSerializer):
     montant_calcule = serializers.SerializerMethodField(read_only=True)
     client_detail = serializers.SerializerMethodField(read_only=True)
+    client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
+    bureau_name = serializers.CharField(source='bureau.numero', read_only=True)
 
     class Meta:
         model = Reservation
-        fields = ['id', 'date_debut', 'montant_calcule', 'date_fin', 'bureau', 'client', 'client_detail', 'created_at', 'updated_at', 'is_active']
+        fields = ['id', 'date_debut', 'montant_calcule', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['client'] # CORRECTION
 
     def get_montant_calcule(self, obj):

@@ -4,7 +4,7 @@ from .models import Client, Niveau, TypeBureau, Batiment, Bureau, Paiement, Rese
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     # CORRECTION : On utilise les méthodes personnalisées (get_first_name...) au lieu de user__first_name
-    list_display = ('id', 'user__id', 'get_first_name', 'get_last_name', 'telephone', 'addresse', 'date_naissance', 'created_at')
+    list_display = ( 'user__id', 'get_first_name', 'get_last_name', 'telephone', 'addresse', 'date_naissance', 'created_at')
     search_fields = ('user__first_name', 'user__last_name', 'user__username', 'telephone')
     list_filter = ('created_at',)
     

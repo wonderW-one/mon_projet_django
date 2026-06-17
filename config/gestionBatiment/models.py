@@ -13,8 +13,8 @@ class Client(models.Model):
         MANAGER = 'MANAGER', _('Gestionnaire')
         CLIENT = 'CLIENT', _('Personnel')
 
-    id = models.AutoField(primary_key=True)
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='client_profile')
+    #id = models.AutoField(primary_key=True)
+    user = models.OneToOneField(User,primary_key=True , on_delete=models.CASCADE, related_name='client_profile')
     role = models.CharField(max_length=15, choices=UserRole.choices, default=UserRole.CLIENT)
     telephone = PhoneNumberField(region='CM', blank=True, null=True)
     addresse = models.CharField(max_length=255, blank=True, null=True)
