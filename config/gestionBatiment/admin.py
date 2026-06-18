@@ -89,14 +89,23 @@ class LocationAdmin(admin.ModelAdmin):
     search_fields = ('client__user__first_name', 'client__user__last_name', 'bureau__numero')
     list_filter = ('is_active', 'date_debut', 'date_fin')
 
-
 @admin.register(Paiement)
 class PaiementAdmin(admin.ModelAdmin):
-    
+    # 1. Liste d'affichage claire
     list_display = ('id', 'client', 'montant', 'reste_a_payer_visuel', 'statut', 'mode', 'contrat', 'location', 'date')
-    search_fields = ('client__user__first_name', 'client__user__last_name', 'contrat__id')
-    list_filter = ('statut', 'mode', 'date')
+    search_fields = ('client__user__first_name', 'client__user__last_name', 'contrat__id', 'location__id')
+    list_filter = ('statut', 'mode', 'date', 'annee_paye')
+    
+    # 2. OPTIMISATION SQL : Charge les relations en une seule requête
+    list_select_related = ('client__user', 'contrat', 'location')
 
+    # 3. Affichage dynamique de la monnaie
     def reste_a_payer_visuel(self, obj):
-        return f"{obj.reste_a_payer} CFA"
+        # Utilise FBU ou BIF pour correspondre à votre interface Angular
+        return f"{obj.reste_a_payer:,.2f} FBU"
     reste_a_payer_visuel.short_description = "Reste à payer"
+
+    # 4. SÉCURITÉ : Passe l'administrateur connecté à la méthode save() du modèle
+    def save_model(self, request, obj, form, change):
+        # On extrait l'user de la requête et on le passe au save() personnalisé du modèle
+        obj.save(user=request.user)

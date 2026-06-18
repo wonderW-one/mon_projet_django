@@ -1,36 +1,55 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User 
 from django.db import transaction
+from decimal import Decimal
 from .models import Client, Batiment, Niveau, TypeBureau, Bureau, Reservation, Contrat, Location, Paiement
 
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
+from .permissions import ADMIN_ROLE, WORKER_ROLES, CLIENT_ROLES
 
 
-# ---Token---
+# --- Token ---
 class MonTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
 
-        # On cherche si l'utilisateur possède un profil Client
+        # 1. Vérification si Superuser
+        if user.is_superuser:
+            token['role'] = ADMIN_ROLE
+            return token
+
+        # 2. Vérification par profil lié (Client)
         try:
             client_profile = Client.objects.get(user=user)
-            # On ajoute le rôle directement dans le payload du JWT
             token['role'] = str(client_profile.role)
+            return token
         except Client.DoesNotExist:
-            # Si l'utilisateur n'a pas de profil Client (ex: Superuser Django)
-            if user.is_superuser:
-                token['role'] = 'ADMIN'
-            else:
-                token['role'] = 'CLIENT' # Rôle par défaut de sécurité
+            pass
+
+        # 3. Vérification par Groupes Django (Workers / Admins)
+        groups = set(user.groups.values_list('name', flat=True))
+        if ADMIN_ROLE in groups:
+            token['role'] = ADMIN_ROLE
+        elif any(role in groups for role in WORKER_ROLES):
+            for role in WORKER_ROLES:
+                if role in groups:
+                    token['role'] = role
+                    break
+        elif CLIENT_ROLES and CLIENT_ROLES[0] in groups:
+            token['role'] = CLIENT_ROLES[0]
+        else:
+            token['role'] = 'ANONYME'
 
         return token
+
 
 class MonTokenObtainPairView(TokenObtainPairView):
     serializer_class = MonTokenObtainPairSerializer
     
-# --- SÉRIALISEURS COMPACTS DE LECTURE (Pour la réutilisation) ---
+
+# --- SÉRIALISEURS COMPACTS DE LECTURE ---
 
 class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,7 +75,6 @@ class ClientSerializer(serializers.ModelSerializer):
     user_detail = serializers.SerializerMethodField(read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
 
-    # CORRECTION : required=False pour permettre les mises à jour partielles (PATCH)
     username = serializers.CharField(write_only=True, required=False, max_length=150)
     password = serializers.CharField(write_only=True, required=False)
     email = serializers.EmailField(write_only=True, required=False)
@@ -75,7 +93,6 @@ class ClientSerializer(serializers.ModelSerializer):
         return UserDetailSerializer(obj.user).data
 
     def validate_username(self, value):
-        # CORRECTION : Ne pas s'auto-bloquer lors d'une modification
         query = User.objects.filter(username=value)
         if self.instance and self.instance.user:
             query = query.exclude(pk=self.instance.user.id)
@@ -85,7 +102,6 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         with transaction.atomic():
-            # Extraction sécurisée avec valeurs par défaut au cas où
             user = User.objects.create(
                 username=validated_data.pop('username'),
                 email=validated_data.pop('email', ''),
@@ -97,13 +113,12 @@ class ClientSerializer(serializers.ModelSerializer):
 
             client = Client.objects.create(
                 user=user,
-                role=Client.UserRole.CLIENT,
+                role='CLIENT',
                 **validated_data
             )
             return client
 
     def update(self, instance, validated_data):
-        # AJOUT CRITIQUE : Permet de modifier aussi les infos de l'User lié
         user_data = {}
         for field in ['username', 'email', 'first_name', 'last_name']:
             if field in validated_data:
@@ -112,7 +127,6 @@ class ClientSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
 
         with transaction.atomic():
-            # 1. Mise à jour de l'User
             if user_data or password:
                 user = instance.user
                 for attr, value in user_data.items():
@@ -121,7 +135,6 @@ class ClientSerializer(serializers.ModelSerializer):
                     user.set_password(password)
                 user.save()
 
-            # 2. Mise à jour du Client
             return super().update(instance, validated_data)
 
 
@@ -132,16 +145,11 @@ class BatimentSerializer(serializers.ModelSerializer):
 
 
 class NiveauSerializer(serializers.ModelSerializer):
-    batiment_detail = serializers.SerializerMethodField(read_only=True)
+    batiment_detail = BatimentSerializer(source='batiment', read_only=True)
 
     class Meta:
         model = Niveau
         fields = ['id', 'nom', 'batiment', 'batiment_detail', 'created_at', 'updated_at', 'is_active']
-    
-    def get_batiment_detail(self, obj):
-        if obj.batiment:
-            return BatimentSerializer(obj.batiment).data
-        return None
 
 
 class TypeBureauSerializer(serializers.ModelSerializer):
@@ -151,8 +159,8 @@ class TypeBureauSerializer(serializers.ModelSerializer):
 
 
 class BureauSerializer(serializers.ModelSerializer):
-    type_detail = serializers.SerializerMethodField(read_only=True)
-    batiment_detail = serializers.SerializerMethodField(read_only=True)
+    type_detail = TypeBureauSerializer(source='type', read_only=True)
+    batiment_detail = BatimentSerializer(source='batiment', read_only=True)
     niveau_detail = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -162,12 +170,6 @@ class BureauSerializer(serializers.ModelSerializer):
             'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 
             'created_at', 'updated_at', 'is_active'
         ]
-
-    def get_type_detail(self, obj):
-        return TypeBureauSerializer(obj.type).data if obj.type else None
-
-    def get_batiment_detail(self, obj):
-        return BatimentSerializer(obj.batiment).data if obj.batiment else None
 
     def get_niveau_detail(self, obj):
         if obj.niveau:
@@ -181,70 +183,64 @@ class BureauSerializer(serializers.ModelSerializer):
 
 class ContratSerializer(serializers.ModelSerializer):
     client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
+    
+    # MODIFICATION : Permet à la méthode perform_create de remplir le client automatiquement sans bloquer
+    client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), required=False)
 
     class Meta:
         model = Contrat
         fields = '__all__'
-        read_only_fields = ['created_at', 'updated_at', 'montant'] # On enlève 'client' d'ici
+        read_only_fields = ['created_at', 'updated_at', 'montant']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
-        # On récupère la requête HTTP pour connaître l'utilisateur connecté
         request = self.context.get('request')
         if request and request.user:
-            # Si l'utilisateur n'est PAS admin (c'est un client)
             if not request.user.is_superuser and not request.user.groups.filter(name='ADMIN').exists():
-                # On passe le champ client en lecture seule -> il disparaît du formulaire de saisie !
                 self.fields['client'].read_only = True
 
-        
+
 class LocationSerializer(serializers.ModelSerializer):
-    client_detail = serializers.SerializerMethodField(read_only=True)
+    client_detail = ClientDetailSerializer(source='client', read_only=True)
     client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
     bureau_name = serializers.CharField(source='bureau.numero', read_only=True)
 
     class Meta:
         model = Location
         fields = ['id', 'date_debut', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['client'] # CORRECTION : Évite le blocage à la création par le client
-
-    def get_client_detail(self, obj):
-        return ClientDetailSerializer(obj.client).data if obj.client else None
+        read_only_fields = ['client']
 
 
 class PaiementSerializer(serializers.ModelSerializer):
-    client_detail = serializers.SerializerMethodField(read_only=True)
+    client_detail = ClientDetailSerializer(source='client', read_only=True)
     client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
-    montant = serializers.DecimalField(max_digits=10, decimal_places=2)
+    
+    # MODIFICATION : required=False évite l'obligation de saisir le montant côté client
+    montant = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     
     class Meta:
         model = Paiement
         fields = ['id', 'date', 'montant', 'mode', 'location', 'client', 'client_prenom', 'client_detail', 'contrat', 'statut', 'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['client'] # CORRECTION
-
-    def get_client_detail(self, obj):
-        return ClientDetailSerializer(obj.client).data if obj.client else None
+        read_only_fields = ['client']
 
 
 class ReservationSerializer(serializers.ModelSerializer):
     montant_calcule = serializers.SerializerMethodField(read_only=True)
-    client_detail = serializers.SerializerMethodField(read_only=True)
+    client_detail = ClientDetailSerializer(source='client', read_only=True)
     client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
     bureau_name = serializers.CharField(source='bureau.numero', read_only=True)
 
     class Meta:
         model = Reservation
         fields = ['id', 'date_debut', 'montant_calcule', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['client'] # CORRECTION
+        read_only_fields = ['client']
 
     def get_montant_calcule(self, obj):
         if obj.bureau and obj.date_debut and obj.date_fin:
             delta = obj.date_fin - obj.date_debut
-            nombre_jours = delta.days 
-            montant_total = nombre_jours * float(obj.bureau.prix) / 2
-            return round(montant_total, 2)
+            nombre_jours = max(delta.days, 0)
+            
+            prix_bureau = Decimal(str(obj.bureau.prix))
+            montant_total = (Decimal(nombre_jours) * prix_bureau) / Decimal('2')
+            return float(round(montant_total, 2))
         return 0.0
-    
-    def get_client_detail(self, obj):
-        return ClientDetailSerializer(obj.client).data if obj.client else None
