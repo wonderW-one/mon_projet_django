@@ -228,7 +228,24 @@ class PaiementSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at'
         ]
         # Ces champs sont calculés par le serveur : invisibles/bloqués au POST
-        read_only_fields = ['montant', 'mois_paye', 'annee_paye', 'client']
+        #read_only_fields = ['montant', 'mois_paye', 'annee_paye', 'client']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            # 1. On vérifie s'il y a un profil attaché
+            if hasattr(request.user, 'client_profile') and request.user.client_profile:
+                profile = request.user.client_profile
+                
+                # 2. CORRECTION : On bloque en lecture seule UNIQUEMENT si son rôle est strictement 'CLIENT'
+                if profile.role == 'CLIENT':
+                    champs_verrouilles = ['montant', 'mois_paye', 'annee_paye', 'client']
+                    for champ in champs_verrouilles:
+                        if champ in self.fields:
+                            self.fields[champ].read_only = True
 
 
 class ReservationSerializer(serializers.ModelSerializer):
