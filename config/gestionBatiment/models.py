@@ -271,8 +271,8 @@ class Paiement(models.Model):
     date = models.DateField(null=True, blank=True, help_text="Date d'encaissement")
     mode = models.CharField(max_length=20, choices=[('CASH', 'Espèces'), ('CARD', 'Carte bancaire'), ('TRANSFER', 'Virement bancaire')], default='CASH')
     
-    mois_paye = models.IntegerField(choices=CHOIX_MOIS, null=True, blank=False)
-    annee_paye = models.IntegerField(default=2026, null=True, blank=False)
+    mois_paye = models.IntegerField(choices=CHOIX_MOIS, null=True, blank=True)
+    annee_paye = models.IntegerField(default=2026, null=True, blank=True)
     
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, related_name='paiements', null=True, blank=True)
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='paiements')
@@ -303,13 +303,26 @@ class Paiement(models.Model):
 
     def save(self, *args, **kwargs):
         user_performing_action = kwargs.pop('user', None)
+        # 1. Génération automatique du mois et de l'année en cours si non saisis
+        aujourdhui = timezone.now()
+        if not self.mois_paye:
+            self.mois_paye = aujourdhui.month
+        if not self.annee_paye:
+            self.annee_paye = aujourdhui.year
 
+        # 2. Assignation automatique du montant basé sur le contrat
+        if self.contrat and getattr(self.contrat, 'montant', None):
+            self.montant = self.contrat.montant
+        # Optionnel : Si c'est une location à la place d'un contrat
+        elif self.location and getattr(self.location, 'montant', None):
+            self.montant = self.location.montant
+            
         # CORRECTION SÉCURITÉ : Vérifie si user possède 'client_profile' pour éviter un plantage avec un superuser classique
         if user_performing_action and hasattr(user_performing_action, 'client_profile') and user_performing_action.client_profile:
             role_utilisateur = user_performing_action.client_profile.role
             if self.montant > Decimal('100000.00') and role_utilisateur in ['AGENT', 'TRAVAILLEUR', 'MANAGER'] and self.statut == 'PAID':
                 self.statut = self.PaiementStatus.PENDING_ADMIN
-                
+                    
         self.full_clean()  
         super().save(*args, **kwargs)
 

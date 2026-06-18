@@ -196,15 +196,19 @@ class LocationPermission(BaseRolePermission):
 
 
 class PaiementPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: enregistre & liste | CLIENT: effectue & voit ses propres paiements."""
+    """
+    ADMIN: Accès complet (GET, POST, PUT, PATCH, DELETE)
+    TRAVAILLEUR: Peut lister (GET), voir le détail (GET obj) et enregistrer (POST), mais pas modifier/supprimer
+    CLIENT: Peut initier un paiement (POST) et voir ses propres paiements (GET)
+    """
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
         
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
+        if role == ADMIN_ROLE: 
+            return True
         
-        # CORRECTION : On rajoute le 'POST' pour le rôle CLIENT pour lui permettre de payer
         if role in WORKER_ROLES or role in CLIENT_ROLES:
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
             
@@ -212,18 +216,24 @@ class PaiementPermission(BaseRolePermission):
 
     def has_object_permission(self, request, view, obj):
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return True
+        if role == ADMIN_ROLE: 
+            return True
+            
+        # Sécurité WORKER : droit de lecture seule (SAFE_METHODS) sur l'objet individuel
+        if role in WORKER_ROLES: 
+            return request.method in SAFE_METHODS
         
+        # Sécurité CLIENT : droit de lecture seule uniquement s'il est propriétaire
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            if not user_client: return False
+            if not user_client: 
+                return False
                 
             is_owner = (
                 obj.client == user_client or 
                 (obj.contrat and obj.contrat.client == user_client) or 
                 (obj.location and obj.location.client == user_client)
             )
-            # Un client ne peut lire que ses propres reçus/paiements (Lecture seule sur l'objet individuel)
             return is_owner and request.method in SAFE_METHODS
+
         return False

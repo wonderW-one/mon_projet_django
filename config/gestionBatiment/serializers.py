@@ -217,11 +217,18 @@ class PaiementSerializer(serializers.ModelSerializer):
     
     # MODIFICATION : required=False évite l'obligation de saisir le montant côté client
     montant = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    mois_paye = serializers.IntegerField(required=False, allow_null=True)
+    annee_paye = serializers.IntegerField(required=False, allow_null=True)
     
     class Meta:
         model = Paiement
-        fields = ['id', 'date', 'montant', 'mode', 'location', 'client', 'client_prenom', 'client_detail', 'contrat', 'statut', 'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['client']
+        fields = [
+            'id', 'contrat', 'location', 'mode', 'statut', 
+            'montant', 'mois_paye', 'annee_paye', 'client', 'client_prenom', 'client_detail',
+            'created_at', 'updated_at'
+        ]
+        # Ces champs sont calculés par le serveur : invisibles/bloqués au POST
+        read_only_fields = ['montant', 'mois_paye', 'annee_paye', 'client']
 
 
 class ReservationSerializer(serializers.ModelSerializer):

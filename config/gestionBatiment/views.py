@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from django.utils import timezone
 
 from .serializers import (
     ClientSerializer, BatimentSerializer, NiveauSerializer, 
@@ -393,14 +394,20 @@ class PaiementViewSet(BaseModelViewSet):
         return Paiement.objects.none()
 
     def perform_create(self, serializer):
-        """AJOUT CRITIQUE : Calcule automatiquement le montant sans saisie utilisateur et sécurise le client"""
+        """Calcule automatiquement le montant, le mois, l'année sans saisie utilisateur et sécurise le client"""
         role = self.get_user_role()
         profile = self.get_client_profile()
         
+        # CORRECTION : Récupération des données de la requête
         data = self.request.data
         contrat_id = data.get('contrat')
         location_id = data.get('location')
         
+        # Gestion automatique du temps (Mois et Année)
+        maintenant = timezone.now()
+        mois_auto = data.get('mois_paye', maintenant.month)
+        annee_auto = data.get('annee_paye', maintenant.year)
+    
         montant_auto = None
         client_final = None
 
@@ -424,7 +431,7 @@ class PaiementViewSet(BaseModelViewSet):
                 if role in CLIENT_ROLES and location.client != profile:
                     raise DRFValidationError({"location": "Cette location ne vous appartient pas."})
                 
-                if hasattr(location, 'montant'):
+                if hasattr(location, 'montant') and location.montant:
                     montant_auto = location.montant
                 elif location.bureau:
                     montant_auto = location.bureau.prix
@@ -437,10 +444,22 @@ class PaiementViewSet(BaseModelViewSet):
 
         # 3. Contrôle de validité du montant extrait du système
         if montant_auto is None or float(montant_auto) <= 0:
-            raise DRFValidationError({"montant": "Impossible de régénérer un montant automatique valide pour cette entité."})
+            raise DRFValidationError({"montant": "Impossible de générer un montant automatique valide pour cette entité."})
 
-        # 4. Enregistrement forcé et sécurisé
+        # 4. Enregistrement unique, forcé et sécurisé (Nettoyé des doublons)
         if role in CLIENT_ROLES:
-            serializer.save(client=profile, montant=montant_auto, statut='VALIDE')
+            serializer.save(
+                client=profile, 
+                montant=montant_auto, 
+                statut='PAID', 
+                mois_paye=mois_auto, 
+                annee_paye=annee_auto
+            )
         else:
-            serializer.save(client=client_final, montant=montant_auto, statut='VALIDE')
+            serializer.save(
+                client=client_final, 
+                montant=montant_auto, 
+                statut='PAID', 
+                mois_paye=mois_auto, 
+                annee_paye=annee_auto
+            )
