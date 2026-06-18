@@ -240,7 +240,22 @@ class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservation
         fields = ['id', 'date_debut', 'montant_calcule', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
-        read_only_fields = ['client']
+        read_only_fields = ['created_at', 'updated_at'] 
+
+    #-_-+Fonction pour masque le champ client aux Clients connecte mais permettre les admins de voir les champs
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            # 1. On vérifie s'il y a un profil attaché
+            if hasattr(request.user, 'client_profile') and request.user.client_profile:
+                profile = request.user.client_profile
+                
+                # 2. CORRECTION : On bloque en lecture seule UNIQUEMENT si son rôle est strictement 'CLIENT'
+                if profile.role == 'CLIENT':
+                    self.fields['client'].read_only = True
+
 
     def get_montant_calcule(self, obj):
         if obj.bureau and obj.date_debut and obj.date_fin:
