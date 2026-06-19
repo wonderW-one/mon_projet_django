@@ -85,9 +85,9 @@ class ContratAdmin(admin.ModelAdmin):
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
     # AJOUT : Enregistrement de la table Location manquante
-    list_display = ('id', 'client', 'bureau', 'contrat', 'date_debut', 'date_fin', 'statut_temporel', 'is_active')
+    list_display = ('id', 'client', 'bureau', 'contrat', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'bureau__numero')
-    list_filter = ('is_active', 'date_debut', 'date_fin')
+    list_filter = ('is_active',)
 
 @admin.register(Paiement)
 class PaiementAdmin(admin.ModelAdmin):

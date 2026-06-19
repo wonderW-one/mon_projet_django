@@ -149,7 +149,12 @@ class ReservationPermission(BaseRolePermission):
         
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            return user_client and obj.client == user_client and request.method in SAFE_METHODS
+            
+            # Vérifie d'abord que l'objet appartient bien au client connecté
+            if user_client and obj.client == user_client:
+                # Autorise si c'est une méthode de lecture (GET) OU si c'est l'action de conversion en contrat
+                return request.method in SAFE_METHODS or view.action == 'convertir_contrat'
+                
         return False
 
 

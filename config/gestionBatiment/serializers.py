@@ -210,45 +210,108 @@ class LocationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Location
-        fields = ['id', 'date_debut', 'date_fin', 'contrat', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
+        fields = ['id', 'contrat', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['client']
 
-
 class PaiementSerializer(serializers.ModelSerializer):
+    # Utilisation du Serializer dédié pour un rendu propre (ou fallback sur la méthode imbriquée)
     client_detail = ClientDetailSerializer(source='client', read_only=True)
     client_prenom = serializers.CharField(source='client.user.first_name', read_only=True)
+    created_by = UserDetailSerializer(read_only=True) # Conservé de votre premier code
     
-    # MODIFICATION : required=False évite l'obligation de saisir le montant côté client
-    montant = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    mode = serializers.ChoiceField(
+        choices=[('CASH', 'Espèces'), ('CARD', 'Carte bancaire'), ('TRANSFER', 'Virement bancaire')], 
+        default='CASH'
+    )
+    
+    # Rendu flexible (modifié dynamiquement dans le __init__ selon le rôle)
+    montant = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
     mois_paye = serializers.IntegerField(required=False, allow_null=True)
     annee_paye = serializers.IntegerField(required=False, allow_null=True)
-    
+    client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), required=False, allow_null=True)
+
     class Meta:
         model = Paiement
         fields = [
-            'id', 'contrat', 'location', 'mode', 'statut', 
+            'id', 'date', 'contrat', 'location', 'mode', 'statut', 
             'montant', 'mois_paye', 'annee_paye', 'client', 'client_prenom', 'client_detail',
-            'created_at', 'updated_at'
+            'created_by', 'created_at', 'updated_at', 'is_active'
         ]
-        # Ces champs sont calculés par le serveur : invisibles/bloqués au POST
-        #read_only_fields = ['montant', 'mois_paye', 'annee_paye', 'client']
-        read_only_fields = ['created_at', 'updated_at']
+        # Champs immuables gérés uniquement par le backend
+        read_only_fields = ['created_by', 'statut', 'created_at', 'updated_at', 'is_active']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
-            # 1. On vérifie s'il y a un profil attaché
             if hasattr(request.user, 'client_profile') and request.user.client_profile:
                 profile = request.user.client_profile
                 
-                # 2. CORRECTION : On bloque en lecture seule UNIQUEMENT si son rôle est strictement 'CLIENT'
+                # Si l'utilisateur est un simple CLIENT, on lui verrouille ces champs
                 if profile.role == 'CLIENT':
                     champs_verrouilles = ['montant', 'mois_paye', 'annee_paye', 'client']
                     for champ in champs_verrouilles:
                         if champ in self.fields:
                             self.fields[champ].read_only = True
+
+    def validate(self, attrs):
+        client = attrs.get('client')
+        contrat = attrs.get('contrat')
+        location = attrs.get('location')
+
+        # 1. Validation de base : il faut au moins un ancrage financier
+        if not client and not contrat and not location:
+            raise serializers.ValidationError(
+                "Un paiement doit être lié à un client, un contrat ou une location."
+            )
+
+        # 2. Validation de cohérence (si l'Admin ou le Travailleur saisit les valeurs manuellement)
+        if client and contrat and contrat.client_id != client.id:
+            raise serializers.ValidationError({
+                'client': "Le client ne correspond pas au client du contrat."
+            })
+
+        if client and location and location.client_id != client.id:
+            raise serializers.ValidationError({
+                'client': "Le client ne correspond pas au client de la location."
+            })
+
+        return attrs
+
+    def create(self, validated_data):
+        # Extraction de l'utilisateur connecté via le contexte pour le injecter au .save()
+        user = validated_data.pop('user', None)
+        if not user:
+            request = self.context.get('request')
+            user = request.user if request else None
+
+        contrat = validated_data.get('contrat')
+        location = validated_data.get('location')
+        client = validated_data.get('client')
+
+        # Sécurité : Si le client n'est pas fourni, on le déduit automatiquement
+        if not client:
+            if contrat and hasattr(contrat, 'client'):
+                validated_data['client'] = contrat.client
+            elif location and hasattr(location, 'client'):
+                validated_data['client'] = location.client
+
+        paiement = Paiement(**validated_data)
+        paiement.save(user=user) # Maintien de votre logique save(user=user)
+        return paiement
+
+    def update(self, instance, validated_data):
+        user = validated_data.pop('user', None)
+        if not user:
+            request = self.context.get('request')
+            user = request.user if request else None
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+            
+        instance.save(user=user)
+        return instance
 
 
 class ReservationSerializer(serializers.ModelSerializer):

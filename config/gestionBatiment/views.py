@@ -1,5 +1,5 @@
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import viewsets, status
@@ -7,7 +7,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError as DRFValidationError
-from django.utils import timezone
 
 from .serializers import (
     ClientSerializer, BatimentSerializer, NiveauSerializer, 
@@ -102,38 +101,64 @@ def index(request):
 
 # ==================== ViewSets API REST ====================
 
-from rest_framework.permissions import AllowAny
-# Importe IsAuthenticated ou tes classes par défaut si nécessaire
-
 class ClientViewSet(BaseModelViewSet):
-    """ViewSet pour gérer les Clients"""
-    serializer_class = ClientSerializer
-    permission_classes = [ClientPermission]
-    ordering = ['user_id']
-
-    # 🟢 AJOUT : On autorise tout le monde uniquement sur l'action d'écriture (POST)
-    def get_permissions(self):
+   """ViewSet pour gérer les Clients"""
+   serializer_class = ClientSerializer
+   permission_classes = [ClientPermission]
+   ordering = ['user_id']
+   
+   def get_permissions(self):
         if self.action == 'create':
             return [AllowAny()]
         return super().get_permissions()
 
-    def get_queryset(self):
-        # 🟢 AJOUT SÉCURITÉ : Si c'est l'action 'create', on retourne un queryset vide
-        # ou un ensemble fictif car l'inscription n'a pas besoin de lire la base de données.
-        if self.action == 'create':
-            return Client.objects.none()
-
+   def get_queryset(self):
         role = self.get_user_role()
         profile = self.get_client_profile()
         base_query = Client.objects.select_related('user')
+        if self.action == 'create':
+            return Client.objects.none()
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return base_query.all().order_by('user_id')
         if role in CLIENT_ROLES and profile is not None:
-            return base_query.filter(user_id=profile.user_id)
+            return base_query.filter(user_id=profile.user.id)
         
         return Client.objects.none()
 
+   @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='inscription')
+   def inscription(self, request):
+        """Permet a un utilisateur (anonyme ou connecté sans profil) de creer SON profil"""
+        if request.user.is_authenticated and self.get_client_profile() is not None:
+            return Response(
+                {"detail": "Vous avez déjà un profil client créé."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            if request.user.is_authenticated:
+                client = serializer.save(user=request.user)
+            else:
+                client = serializer.save()
+            return Response(self.get_serializer(client).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+   @action(detail=False, methods=['get'], url_path='mon-profil')
+   def mon_profil(self, request):
+        """Point d'accès crucial pour le Frontend pour vérifier l'état du profil"""
+        profile = self.get_client_profile()
+        if profile is None:
+            return Response(
+                {"has_profile": False, "detail": "Aucun profil client trouvé pour cet utilisateur."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = self.get_serializer(profile)
+        data = serializer.data
+        data["has_profile"] = True
+        return Response(data, status=status.HTTP_200_OK)
+    
 
 class BatimentViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Bâtiments"""
@@ -250,7 +275,7 @@ class ReservationViewSet(BaseModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='sans-contrat')
     def sans_contrat(self, request):
-        """AJOUT : Filtre et retourne les réservations actives qui n'ont pas encore de contrat lié"""
+        """Filtre et retourne les réservations actives qui n'ont pas encore de contrat lié"""
         role = self.get_user_role()
         profile = self.get_client_profile()
         
@@ -265,6 +290,60 @@ class ReservationViewSet(BaseModelViewSet):
 
         serializer = self.get_serializer(reservations, many=True)
         return Response(serializer.data)
+
+    # 🔵 NOUVELLE ACTION ADAPTÉE : Conversion de la réservation courante en Contrat
+    @action(detail=True, methods=['post'], url_path='convertir-contrat')
+    def convertir_contrat(self, request, pk=None):
+        """
+        Génère un contrat actif à partir d'une réservation existante.
+        POST /api/reservations/<id>/convertir-contrat/
+        """
+        reservation = self.get_object()
+
+        # Sécurités de base
+        if not reservation.is_active:
+            return Response(
+                {"detail": "Impossible de convertir une réservation inactive."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if Contrat.objects.filter(reservation=reservation, is_active=True).exists():
+            return Response(
+                {"detail": "Un contrat actif est déjà associé à cette réservation."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Récupération optionnelle de la facturation envoyée par le body
+        type_facturation = request.data.get('type_facturation', 'MENSUEL')
+        if type_facturation not in ['MENSUEL', 'TRIMESTRIEL', 'SEMESTRIEL']:
+            type_facturation = 'MENSUEL'
+
+        try:
+            # Création du contrat en reprenant les données de réservation
+            contrat = Contrat(
+                reservation=reservation,
+                client=reservation.client,
+                date_debut=reservation.date_debut,
+                date_fin=reservation.date_fin,
+                type_facturation=type_facturation,
+                is_active=True
+            )
+            # Enclenche l'attribution de created_by & calcul du montant via le modèle
+            contrat.save(user=request.user)
+
+            return Response(
+                {
+                    "detail": f"La réservation #{reservation.id} a été convertie en contrat avec succès.",
+                    "contrat_id": contrat.id,
+                    "montant_genere": contrat.montant
+                },
+                status=status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Erreur lors de la génération du contrat : {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def get_serializer(self, *args, **kwargs):
         serializer = super().get_serializer(*args, **kwargs)
@@ -330,7 +409,6 @@ class ContratViewSet(BaseModelViewSet):
             profile = self.get_client_profile()
 
             if role in CLIENT_ROLES and profile is not None:
-                # CORRECTION/AJOUT : Le client ne peut lier qu'une réservation libre de tout contrat
                 instance_serializer.fields['reservation'].queryset = Reservation.objects.filter(
                     client=profile, 
                     is_active=True,
@@ -350,7 +428,6 @@ class ContratViewSet(BaseModelViewSet):
                 "reservation": "Une réservation valide est obligatoire pour générer un contrat."
             })
 
-        # Sécurité : Empêche d'associer une réservation déjà verrouillée par un autre contrat
         if Contrat.objects.filter(reservation=reservation, is_active=True).exists():
             raise DRFValidationError({
                 "reservation": "Un contrat actif existe déjà pour cette réservation."
@@ -408,16 +485,13 @@ class PaiementViewSet(BaseModelViewSet):
         return Paiement.objects.none()
 
     def perform_create(self, serializer):
-        """Calcule automatiquement le montant, le mois, l'année sans saisie utilisateur et sécurise le client"""
         role = self.get_user_role()
         profile = self.get_client_profile()
         
-        # CORRECTION : Récupération des données de la requête
         data = self.request.data
         contrat_id = data.get('contrat')
         location_id = data.get('location')
         
-        # Gestion automatique du temps (Mois et Année)
         maintenant = timezone.now()
         mois_auto = data.get('mois_paye', maintenant.month)
         annee_auto = data.get('annee_paye', maintenant.year)
@@ -425,20 +499,17 @@ class PaiementViewSet(BaseModelViewSet):
         montant_auto = None
         client_final = None
 
-        # 1. Traitement si relié à un contrat (Scénario principal)
         if contrat_id:
             try:
                 contrat = Contrat.objects.get(pk=contrat_id, is_active=True)
                 if role in CLIENT_ROLES and contrat.client != profile:
                     raise DRFValidationError({"contrat": "Ce contrat ne vous appartient pas."})
                 
-                # Récupère le montant calculé ou défini sur le contrat
                 montant_auto = contrat.montant or getattr(contrat.reservation, 'montant_calcule', None)
                 client_final = contrat.client
             except Contrat.DoesNotExist:
                 raise DRFValidationError({"contrat": "Contrat introuvable ou inactif."})
 
-        # 2. Traitement alternatif si paiement direct sur une Location
         elif location_id:
             try:
                 location = Location.objects.get(pk=location_id, is_active=True)
@@ -456,11 +527,9 @@ class PaiementViewSet(BaseModelViewSet):
         else:
             raise DRFValidationError({"detail": "Un identifiant de contrat ou de location valide est requis."})
 
-        # 3. Contrôle de validité du montant extrait du système
         if montant_auto is None or float(montant_auto) <= 0:
             raise DRFValidationError({"montant": "Impossible de générer un montant automatique valide pour cette entité."})
 
-        # 4. Enregistrement unique, forcé et sécurisé (Nettoyé des doublons)
         if role in CLIENT_ROLES:
             serializer.save(
                 client=profile, 
@@ -480,13 +549,9 @@ class PaiementViewSet(BaseModelViewSet):
             
     @action(detail=True, methods=['post'], url_path='valider-paiement')
     def valider_paiement(self, request, pk=None):
-        """
-        Action personnalisée pour permettre aux Admins et Travailleurs 
-        (ou Managers) de passer un paiement en statut 'PAID'.
-        """
+        """Action personnalisée pour passer un paiement en statut 'PAID'."""
         paiement = get_object_or_404(Paiement, pk=pk)
         
-        # 1. Sécurité : On vérifie le rôle de l'utilisateur connecté
         user = request.user
         if not hasattr(user, 'client_profile') or user.client_profile.role not in ['ADMIN', 'TRAVAILLEUR', 'MANAGER']:
             return Response(
@@ -494,17 +559,13 @@ class PaiementViewSet(BaseModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        # 2. Vérification : Est-ce que le paiement est déjà payé ?
         if paiement.statut == 'PAID':
             return Response(
                 {"detail": "Ce paiement a déjà été validé et encaissé."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # 3. Mise à jour du statut
         paiement.statut = 'PAID'
-        
-        # On passe 'user' au save au cas où ton modèle en a besoin pour la logique interne
         paiement.save(user=user) 
         
         return Response(
