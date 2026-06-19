@@ -449,31 +449,42 @@ class Paiement(models.Model):
             
         # Si ton champ dans le modèle Bureau s'appelle 'loyer' ou 'prix_journalier', remplace .prix ci-dessus
         return Decimal('0.00')
-
     @property
-    def reste_a_payer(self):
-        """ Calcule le reste de montant qu'on va paie"""
-        loyer_attendu = self.loyer_mensuel_prevu_30_jours
-        if loyer_attendu == Decimal('0.00'):
+    def reste_a_payer_avant_paiement(self):
+        """Calcule le reste à payer sur la période SANS inclure le paiement en cours."""
+        # 1. Obtenir le montant total attendu pour le contrat
+        if self.contrat and self.contrat.montant:
+            montant_total_attendu = self.contrat.montant
+        else:
+            # Sécurité de secours si le montant du contrat n'est pas saisi
+            montant_total_attendu = self.loyer_mensuel_prevu_30_jours
+
+        if montant_total_attendu == Decimal('0.00'):
             return Decimal('0.00')
 
-        # On fait la somme de ce que le client a versé CE MOIS-CI pour ce contrat
-        autres_paiements = Paiement.objects.filter(
+        # 2. Récupérer tous les paiements déjà validés pour ce contrat sur ce mois/année
+        paiements_valides = Paiement.objects.filter(
             contrat=self.contrat,
             statut='PAID',
             mois_paye=self.mois_paye,
             annee_paye=self.annee_paye
         )
         
+        # Si le paiement actuel existe déjà en BDD, on l'exclut du calcul préliminaire
         if self.pk:
-            autres_paiements = autres_paiements.exclude(pk=self.pk)
+            paiements_valides = paiements_valides.exclude(pk=self.pk)
 
-        total_deja_paye_ce_mois = sum(p.montant for p in autres_paiements)
+        total_deja_paye = sum(p.montant for p in paiements_valides)
+
+        # Reste à payer avant le traitement de la requête actuelle
+        return max(montant_total_attendu - total_deja_paye, Decimal('0.00'))
+
+    @property
+    def reste_a_payer(self):
+        """Calcule le reste après prise en compte du paiement actuel (si payé)."""
+        reste_avant = self.reste_a_payer_avant_paiement
         
-        # On ajoute le montant de ce paiement-ci s'il est validé
         if self.statut == 'PAID':
-            total_deja_paye_ce_mois += self.montant
-
-        # Le reste = (Prix Bureau * 30) - Ce qui a été payé ce mois-ci
-        reste = loyer_attendu - total_deja_paye_ce_mois
-        return max(reste, Decimal('0.00'))
+            return max(reste_avant - self.montant, Decimal('0.00'))
+            
+        return reste_avant

@@ -534,7 +534,7 @@ class PaiementViewSet(BaseModelViewSet):
             serializer.save(
                 client=profile, 
                 montant=montant_auto, 
-                statut='PAID', 
+                statut='PENDING', 
                 mois_paye=mois_auto, 
                 annee_paye=annee_auto
             )
