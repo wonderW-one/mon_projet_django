@@ -95,24 +95,33 @@ class TypeBureau(models.Model):
 
 
 class Bureau(models.Model):
+    class BureauStatus(models.TextChoices):
+        DISPONIBLE = 'DISPONIBLE', _('Disponible')
+        OCCUPE = 'OCCUPE', _('Occupé')
+
     id = models.AutoField(primary_key=True)
     numero = models.CharField(max_length=20)
     type = models.ForeignKey(TypeBureau, on_delete=models.CASCADE, related_name='bureaux', null=True, blank=True)
-    unite = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     espace = models.FloatField(default=0.0)
-    prix = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
+    prix = models.DecimalField(max_digits=10, decimal_places=2, default=0.0, null=True, blank=True)
     batiment = models.ForeignKey(Batiment, on_delete=models.CASCADE, related_name='bureaux')
     niveau = models.ForeignKey(Niveau, on_delete=models.CASCADE, related_name='bureaux', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
+    statut = models.CharField(max_length=20, choices=BureauStatus.choices, default=BureauStatus.DISPONIBLE)
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['batiment', 'numero'], name='unique_numero_bureau_par_batiment')
+        ]
 
     def __str__(self):
         return f"Bureau {self.numero} ({self.type.nom if self.type else 'Sans type'})"
     
     def clean(self):
         super().clean()
-        if self.unite is not None and self.unite < Decimal('0.00'):
+        if self.prix_unitaire is not None and self.prix_unitaire < Decimal('0.00'):
             raise ValidationError({'unite': _("Le prix unitaire du bureau ne peut pas être inférieur à 0.")})
         if self.espace is not None and self.espace <= 0:
             raise ValidationError({'espace': _("L'espace du bureau doit être strictement supérieur à 0 m².")})
@@ -122,9 +131,12 @@ class Bureau(models.Model):
             })
 
     def save(self, *args, **kwargs):
-        self.full_clean()
-        self.prix = Decimal(str(self.espace)) * self.unite
+        user_performing_action = kwargs.pop('user', None)
+        if user_performing_action:
+            self._history_user = user_performing_action
+        self.prix = Decimal(str(self.espace)) * self.prix_unitaire
         self.prix = self.prix.quantize(Decimal('0.01'))
+        self.full_clean()
         super().save(*args, **kwargs)
 
 
@@ -175,9 +187,15 @@ class Reservation(models.Model):
         
         
 class Contrat(models.Model):
+    class TypeFacturation(models.TextChoices):
+        MENSUEL = 'MENSUEL', _('Mensuel')
+        TRIMESTRIEL = 'TRIMESTRIEL', _('Trimestriel')
+        SEMESTRIEL = 'SEMESTRIEL', _('Semestriel')
+
     id = models.AutoField(primary_key=True)
     reservation = models.OneToOneField(Reservation, on_delete=models.CASCADE, related_name='contrat')
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='contrats')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='contrats_crees')
     date_debut = models.DateField(null=True, blank=True)
     date_fin = models.DateField(null=True, blank=True)
     montant = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
@@ -185,6 +203,13 @@ class Contrat(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
+
+      # MODIFICATION 1 : Ajout du choix de périodicité exigé
+    type_facturation = models.CharField(
+        max_length=20,
+        choices=TypeFacturation.choices,
+        default=TypeFacturation.MENSUEL
+    )
 
     def __str__(self):
         return f"Contrat du {self.date_debut} au {self.date_fin} - {self.client.user.get_full_name()}"
@@ -206,23 +231,39 @@ class Contrat(models.Model):
             raise ValidationError({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
 
     def save(self, *args, **kwargs):
-        if self.date_debut and self.date_fin and self.reservation and self.reservation.bureau:
-            delta = self.date_fin - self.date_debut
-            nombre_jours = max(delta.days, 0)
+        user_performing_action = kwargs.pop('user', None)
+        if user_performing_action:
+            self._history_user = user_performing_action
+        if user_performing_action and not self.created_by_id:
+            self.created_by = user_performing_action
+
+        # MODIFICATION 2 : Calcul harmonisé basé sur la périodicité du contrat
+        if self.reservation and self.reservation.bureau:
             prix_bureau = self.reservation.bureau.prix or Decimal('0.00')
-            self.montant = Decimal(nombre_jours) * prix_bureau
-        
-        if self.montant is not None and self.montant <= Decimal('0.00'):
-            raise ValidationError({'montant': _("Le montant calculé du contrat doit être strictement supérieur à 0.")})
             
+            if self.type_facturation == self.TypeFacturation.MENSUEL:
+                self.montant = prix_bureau * Decimal('30.00')
+            elif self.type_facturation == self.TypeFacturation.TRIMESTRIEL:
+                self.montant = prix_bureau * Decimal('90.00')
+            elif self.type_facturation == self.TypeFacturation.SEMESTRIEL:
+                self.montant = prix_bureau * Decimal('180.00')
+            else:
+                self.montant = prix_bureau * Decimal('30.00')
+
+            self.montant = self.montant.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                
         self.full_clean()
         super().save(*args, **kwargs)
 
 
 class Location(models.Model):
     id = models.AutoField(primary_key=True)
-    bureau = models.ForeignKey(Bureau, on_delete=models.CASCADE, related_name='locations')
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='locations')
+    bureau = models.ForeignKey('Bureau', on_delete=models.CASCADE, related_name='locations')
+    
+    # Communique parfaitement avec ton nouveau modèle Client (la PK pointe vers la table User)
+    client = models.ForeignKey('Client', on_delete=models.CASCADE, related_name='locations')
+    
+    contrat = models.ForeignKey('Contrat', on_delete=models.CASCADE, related_name="locations", null=True, blank=True)
     date_debut = models.DateField(null=True, blank=True)
     date_fin = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -230,7 +271,9 @@ class Location(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"Location du {self.date_debut} au {self.date_fin} - {self.client.user.get_full_name()}"
+        # Utilisation de ton nouveau __str__ ou accès direct via l'objet User lié
+        nom_client = self.client.user.get_full_name() or self.client.user.username
+        return f"Location du {self.date_debut} au {self.date_fin} - {nom_client}"
 
     @property
     def statut_temporel(self):
@@ -245,12 +288,65 @@ class Location(models.Model):
 
     def clean(self):
         super().clean()
+        
         if self.date_debut and self.date_fin and self.date_fin < self.date_debut:
             raise ValidationError({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
+
+        if self.date_debut and self.date_fin and self.bureau and self.is_active:
+            # 1. Anti-chevauchement des locations actives
+            chevauchements_location = Location.objects.filter(
+                bureau=self.bureau,
+                is_active=True,
+                date_debut__lt=self.date_fin,
+                date_fin__gt=self.date_debut
+            )
+            
+            if self.pk:
+                chevauchements_location = chevauchements_location.exclude(pk=self.pk)
+                
+            if chevauchements_location.exists():
+                raise ValidationError({
+                    'date_debut': _("Ce bureau fait déjà l'objet d'une location active pour tout ou partie de ces dates.")
+                })
+
+            # 2. Vérification des réservations concurrentes
+            reservations_concurrentes = Reservation.objects.filter(
+                bureau=self.bureau,
+                is_active=True,
+                date_debut__lt=self.date_fin,
+                date_fin__gt=self.date_debut
+            )
+            
+            if self.contrat and self.contrat.reservation:
+                reservations_concurrentes = reservations_concurrentes.exclude(pk=self.contrat.reservation.pk)
+                
+            if reservations_concurrentes.exists():
+                raise ValidationError({
+                    'date_debut': _("Attention, ce bureau est déjà réservé par un autre client sur cette période.")
+                })
 
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+        
+        # 3. Synchronisation de l'état du Bureau (Occupé / Disponible)
+        if self.bureau:
+            if self.is_active and self.statut_temporel == "EN COURS":
+                if self.bureau.statut != 'OCCUPE':
+                    self.bureau.statut = 'OCCUPE'
+                    self.bureau.save(update_fields=['statut'])
+            else:
+                # Correction de la variable ici pour éviter tout bug
+                autre_loc_en_cours = Location.objects.filter(
+                    bureau=self.bureau, 
+                    is_active=True, 
+                    date_debut__lte=timezone.now().date(), 
+                    date_fin__gte=timezone.now().date()
+                ).exclude(pk=self.pk).exists()
+                
+                if not autre_loc_en_cours and self.bureau.statut == 'OCCUPE':
+                    self.bureau.statut = 'DISPONIBLE'
+                    self.bureau.save(update_fields=['statut'])
 
 
 class Paiement(models.Model):

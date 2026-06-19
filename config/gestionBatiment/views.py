@@ -102,13 +102,27 @@ def index(request):
 
 # ==================== ViewSets API REST ====================
 
+from rest_framework.permissions import AllowAny
+# Importe IsAuthenticated ou tes classes par défaut si nécessaire
+
 class ClientViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Clients"""
     serializer_class = ClientSerializer
     permission_classes = [ClientPermission]
     ordering = ['user_id']
 
+    # 🟢 AJOUT : On autorise tout le monde uniquement sur l'action d'écriture (POST)
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return super().get_permissions()
+
     def get_queryset(self):
+        # 🟢 AJOUT SÉCURITÉ : Si c'est l'action 'create', on retourne un queryset vide
+        # ou un ensemble fictif car l'inscription n'a pas besoin de lire la base de données.
+        if self.action == 'create':
+            return Client.objects.none()
+
         role = self.get_user_role()
         profile = self.get_client_profile()
         base_query = Client.objects.select_related('user')
@@ -463,3 +477,37 @@ class PaiementViewSet(BaseModelViewSet):
                 mois_paye=mois_auto, 
                 annee_paye=annee_auto
             )
+            
+    @action(detail=True, methods=['post'], url_path='valider-paiement')
+    def valider_paiement(self, request, pk=None):
+        """
+        Action personnalisée pour permettre aux Admins et Travailleurs 
+        (ou Managers) de passer un paiement en statut 'PAID'.
+        """
+        paiement = get_object_or_404(Paiement, pk=pk)
+        
+        # 1. Sécurité : On vérifie le rôle de l'utilisateur connecté
+        user = request.user
+        if not hasattr(user, 'client_profile') or user.client_profile.role not in ['ADMIN', 'TRAVAILLEUR', 'MANAGER']:
+            return Response(
+                {"detail": "Vous n'avez pas la permission de valider ce paiement."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # 2. Vérification : Est-ce que le paiement est déjà payé ?
+        if paiement.statut == 'PAID':
+            return Response(
+                {"detail": "Ce paiement a déjà été validé et encaissé."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # 3. Mise à jour du statut
+        paiement.statut = 'PAID'
+        
+        # On passe 'user' au save au cas où ton modèle en a besoin pour la logique interne
+        paiement.save(user=user) 
+        
+        return Response(
+            {"detail": "Le paiement a été validé avec succès !", "statut": paiement.statut}, 
+            status=status.HTTP_200_OK
+        )

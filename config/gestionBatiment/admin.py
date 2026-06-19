@@ -59,7 +59,7 @@ class TypeBureauAdmin(admin.ModelAdmin):
 
 @admin.register(Bureau)
 class BureauAdmin(admin.ModelAdmin):
-    list_display = ('id', 'numero', 'batiment', 'niveau', 'type', 'unite', 'espace', 'prix', 'is_active')
+    list_display = ('id', 'statut', 'numero', 'batiment', 'niveau', 'type', 'prix_unitaire', 'espace', 'prix', 'is_active')
     search_fields = ('numero', 'batiment__nom')
     list_filter = ('batiment', 'niveau', 'type', 'is_active')
     # CORRECTION : Seul le champ 'prix' doit être en readonly. L'utilisateur doit pouvoir saisir l'espace et l'unite !
@@ -76,7 +76,7 @@ class ReservationAdmin(admin.ModelAdmin):
 
 @admin.register(Contrat)
 class ContratAdmin(admin.ModelAdmin):
-    list_display = ('id', 'client', 'reservation', 'date_debut', 'date_fin', 'montant', 'statut_temporel', 'is_active')
+    list_display = ('id', 'client', 'created_by', 'reservation', 'date_debut', 'date_fin', 'montant', 'type_facturation', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'reservation__bureau__numero')
     list_filter = ('is_active', 'date_debut', 'date_fin')
     readonly_fields = ('montant',) # Géré automatiquement dans le modèle désormais
@@ -85,7 +85,7 @@ class ContratAdmin(admin.ModelAdmin):
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
     # AJOUT : Enregistrement de la table Location manquante
-    list_display = ('id', 'client', 'bureau', 'date_debut', 'date_fin', 'statut_temporel', 'is_active')
+    list_display = ('id', 'client', 'bureau', 'contrat', 'date_debut', 'date_fin', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'bureau__numero')
     list_filter = ('is_active', 'date_debut', 'date_fin')
 

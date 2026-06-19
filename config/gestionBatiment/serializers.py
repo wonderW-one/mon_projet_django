@@ -166,10 +166,13 @@ class BureauSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bureau
         fields = [
-            'id', 'numero', 'type', 'type_detail', 'unite', 'espace', 'prix', 
+            'id', 'numero', 'statut', 'type', 'type_detail', 'prix_unitaire', 'espace', 'prix', 
             'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 
             'created_at', 'updated_at', 'is_active'
         ]
+
+        read_only_fields = ['prix']
+        read_only_fields = ['is_active']
 
     def get_niveau_detail(self, obj):
         if obj.niveau:
@@ -207,7 +210,7 @@ class LocationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Location
-        fields = ['id', 'date_debut', 'date_fin', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
+        fields = ['id', 'date_debut', 'date_fin', 'contrat', 'bureau', 'bureau_name', 'client', 'client_prenom', 'client_detail', 'created_at', 'updated_at', 'is_active']
         read_only_fields = ['client']
 
 
