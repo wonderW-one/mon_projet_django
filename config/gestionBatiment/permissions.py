@@ -1,34 +1,35 @@
 from rest_framework import permissions
 from rest_framework.permissions import SAFE_METHODS
 
+
 ADMIN_ROLE = 'ADMIN'
-WORKER_ROLES = ['TRAVAILLEUR', 'MANAGER', 'AGENT']
+WORKER_ROLES = ['TRAVAILLEUR', 'MANAGER']
 CLIENT_ROLES = ['CLIENT']
 
 
 class BaseRolePermission(permissions.BasePermission):
     """Classe de base pour les permissions basées sur les rôles."""
-    
+
     def get_user_role(self, request):
-        """Récupère le rôle de l'utilisateur de manière sécurisée."""
+        """Récupère le rôle de l'utilisateur."""
         user = request.user
         if not user or not user.is_authenticated:
             return None
-        
+
         if user.is_superuser:
             return ADMIN_ROLE
-        
+
         profile = getattr(user, 'client_profile', None)
         if profile is not None:
             return profile.role
-        
+
         groups = set(user.groups.values_list('name', flat=True))
         if ADMIN_ROLE in groups:
             return ADMIN_ROLE
         for role in WORKER_ROLES:
             if role in groups:
                 return role
-        if CLIENT_ROLES and CLIENT_ROLES[0] in groups:
+        if CLIENT_ROLES[0] in groups:
             return CLIENT_ROLES[0]
         return None
 
@@ -36,209 +37,375 @@ class BaseRolePermission(permissions.BasePermission):
 class ClientPermission(BaseRolePermission):
     """
     Permissions pour ClientViewSet:
-    - Inscription / Création : Bloquée pour les clients et anonymes. Réservée à l'ADMIN.
-    - ADMIN : Accès complet (Création, Lecture, Modification, Suppression).
-    - TRAVAILLEUR : Lecture seule globale.
-    - CLIENT : Peut voir et modifier SON propre profil uniquement. Interdit de créer.
+    - ADMIN: voir tous, créer, modifier tous
+    - TRAVAILLEUR/MANAGER: voir tous, lire les informations
+    - CLIENT: voir et modifier son propre profil uniquement
     """
-    
+
     def has_permission(self, request, view):
+        if getattr(view, 'action', None) == 'inscription':
+            return True
+
         if not request.user or not request.user.is_authenticated:
             return False
-        
+
         role = self.get_user_role(request)
-        
-        if role in (ADMIN_ROLE, *WORKER_ROLES):
+
+        if role == ADMIN_ROLE or role in WORKER_ROLES:
             return True
-        
+
         if role in CLIENT_ROLES:
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
-        
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
+        if getattr(view, 'action', None) == 'inscription':
+            return True
+
         if not request.user or not request.user.is_authenticated:
             return False
-        
+
         role = self.get_user_role(request)
-        
+
         if role == ADMIN_ROLE:
             return True
-        
+
         if role in WORKER_ROLES:
             return request.method in SAFE_METHODS
-        
+
         if role in CLIENT_ROLES:
-            user_client = getattr(request.user, 'client_profile', None)
-            return user_client and obj == user_client
-        
+            return obj.user == request.user
+
         return False
 
 
 class BatimentPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: lecture | CLIENT: aucun accès."""
+    """
+    Permissions pour BatimentViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: lecture seule
+    - CLIENT: pas d'accès
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return request.method in SAFE_METHODS
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        role = self.get_user_role(request)
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
+        return False
 
 
 class NiveauPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: lecture | CLIENT: aucun accès."""
+    """
+    Permissions pour NiveauViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: lecture seule
+    - CLIENT: pas d'accès
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return request.method in SAFE_METHODS
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        role = self.get_user_role(request)
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
+        return False
 
 
 class TypeBureauPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: lecture | CLIENT: aucun accès."""
+    """
+    Permissions pour TypeBureauViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: lecture seule
+    - CLIENT: pas d'accès
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return request.method in SAFE_METHODS
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        role = self.get_user_role(request)
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
+        return False
 
 
 class BureauPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR & CLIENT: lecture seule."""
+    """
+    Permissions pour BureauViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: lecture complète
+    - CLIENT: lecture seule (peut voir les bureaux disponibles)
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES or role in CLIENT_ROLES:
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
             return request.method in SAFE_METHODS
+
+        if role in CLIENT_ROLES:
+            return request.method in SAFE_METHODS
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
-        return self.has_permission(request, view)
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        role = self.get_user_role(request)
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
+        if role in CLIENT_ROLES:
+            return request.method in SAFE_METHODS
+
+        return False
 
 
 class ReservationPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: voir tout & modifier | CLIENT: voir & créer les SIENNES uniquement."""
+    """
+    Permissions pour ReservationViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: peuvent voir toutes les réservations, créer pour d'autres clients
+    - CLIENT: ne peuvent voir et créer que leurs propres réservations
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role in (ADMIN_ROLE, *WORKER_ROLES, *CLIENT_ROLES):
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+
+        if role in CLIENT_ROLES:
+            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return True
-        
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            
-            # Vérifie d'abord que l'objet appartient bien au client connecté
-            if user_client and obj.client == user_client:
-                # Autorise si c'est une méthode de lecture (GET) OU si c'est l'action de conversion en contrat
-                return request.method in SAFE_METHODS or view.action == 'convertir_contrat'
-                
+            if user_client and obj.client.id == user_client.id:
+                return request.method in SAFE_METHODS
+
         return False
 
 
 class ContratPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: voir tout & créer | CLIENT: voir & signer les SIENS uniquement."""
+    """
+    Permissions pour ContratViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: peuvent voir tous les contrats, créer/modifier pour des clients
+    - CLIENT: ne peuvent voir et modifier que leurs propres contrats
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role in (ADMIN_ROLE, *WORKER_ROLES, *CLIENT_ROLES):
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST', 'PATCH', 'PUT')
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+
+        if role in CLIENT_ROLES:
+            return request.method in ('GET', 'HEAD', 'OPTIONS')
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return True
-        
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            return user_client and obj.client == user_client and request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
+            if user_client and obj.client.id == user_client.id:
+                return request.method in ('GET', 'HEAD', 'OPTIONS')
+
         return False
 
 
 class LocationPermission(BaseRolePermission):
-    """ADMIN: complet | TRAVAILLEUR: complet | CLIENT: voir uniquement les SIENNES."""
+    """
+    Permissions pour LocationViewSet:
+    - ADMIN: accès complet
+    - TRAVAILLEUR/MANAGER: peuvent lire et créer
+    - CLIENT: ne peuvent pas accéder (locations gérées par travailleurs/admin)
+    """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
+
         role = self.get_user_role(request)
-        if role in (ADMIN_ROLE, *WORKER_ROLES, *CLIENT_ROLES):
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+
         return False
-    
+
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: return True
-        if role in WORKER_ROLES: return True
-        
-        if role in CLIENT_ROLES:
-            user_client = getattr(request.user, 'client_profile', None)
-            return user_client and obj.client == user_client and request.method in SAFE_METHODS
+
+        if role == ADMIN_ROLE:
+            return True
+
+        if role in WORKER_ROLES:
+            return request.method in SAFE_METHODS
+
         return False
 
 
 class PaiementPermission(BaseRolePermission):
     """
-    ADMIN: Accès complet (GET, POST, PUT, PATCH, DELETE)
-    TRAVAILLEUR: Peut lister (GET), voir le détail (GET obj) et enregistrer (POST), mais pas modifier/supprimer
-    CLIENT: Peut initier un paiement (POST) et voir ses propres paiements (GET)
+    Permissions pour PaiementViewSet:
+    - ADMIN: accès complet, peut valider n'importe quel paiement
+    - TRAVAILLEUR/MANAGER: peuvent lire, créer, et déclencher 'valider'
+      (le modèle rétrograde automatiquement en PENDING_ADMIN si nécessaire)
+    - CLIENT: peuvent voir/créer leurs propres paiements, ne peuvent jamais valider
     """
+
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: 
+
+        if role == ADMIN_ROLE:
             return True
-        
-        if role in WORKER_ROLES or role in CLIENT_ROLES:
+
+        if role in WORKER_ROLES:
+            if getattr(view, 'action', None) == 'valider':
+                return True
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
-            
+
+        if role in CLIENT_ROLES:
+            return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
+
         return False
 
     def has_object_permission(self, request, view, obj):
+        if not request.user or not request.user.is_authenticated:
+            return False
+
         role = self.get_user_role(request)
-        if role == ADMIN_ROLE: 
+
+        if role == ADMIN_ROLE:
             return True
-            
-        # Sécurité WORKER : droit de lecture seule (SAFE_METHODS) sur l'objet individuel
-        if role in WORKER_ROLES: 
+
+        if role in WORKER_ROLES:
+            if getattr(view, 'action', None) == 'valider':
+                return True
             return request.method in SAFE_METHODS
-        
-        # Sécurité CLIENT : droit de lecture seule uniquement s'il est propriétaire
+
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            if not user_client: 
-                return False
-                
-            is_owner = (
-                obj.client == user_client or 
-                (obj.contrat and obj.contrat.client == user_client) or 
-                (obj.location and obj.location.client == user_client)
-            )
-            return is_owner and request.method in SAFE_METHODS
+            if user_client and obj.client_id and obj.client_id == user_client.id:
+                return request.method in SAFE_METHODS
 
         return False

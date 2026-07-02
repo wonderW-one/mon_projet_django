@@ -3,12 +3,17 @@ from .models import Client, Niveau, TypeBureau, Batiment, Bureau, Paiement, Rese
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    # CORRECTION : On utilise les méthodes personnalisées (get_first_name...) au lieu de user__first_name
-    list_display = ( 'user__id', 'get_first_name', 'get_last_name', 'telephone', 'addresse', 'date_naissance', 'created_at')
-    search_fields = ('user__first_name', 'user__last_name', 'user__username', 'telephone')
-    list_filter = ('created_at',)
-    
-    # Amélioration de l'affichage des méthodes dans l'admin
+    list_display = (
+        'id', 'user__id', 'get_first_name', 'get_last_name', 'telephone',
+        'type_piece_identite', 'numero_piece_identite', 'nationalite', 'profession',
+        'date_naissance', 'lieu_naissance', 'created_at'
+    )
+    search_fields = (
+        'user__first_name', 'user__last_name', 'user__username',
+        'telephone', 'numero_piece_identite', 'nationalite', 'profession'
+    )
+    list_filter = ('created_at', 'type_piece_identite', 'nationalite')
+
     def get_first_name(self, obj):
         return obj.user.first_name
     get_first_name.short_description = 'Prénom'
@@ -20,11 +25,14 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Batiment)
 class BatimentAdmin(admin.ModelAdmin):
-    # AJOUT : 'taux_occupation' et 'revenues_totaux' visibles en direct
-    list_display = ('id', 'nom', 'adresse', 'nombre_etages', 'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active')
-    search_fields = ('nom', 'adresse')
-    list_filter = ('is_active', 'created_at')
-    
+    list_display = (
+        'id', 'nom', 'adresse', 'nombre_etages',
+        'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_telephone',
+        'periodicite', 'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active'
+    )
+    search_fields = ('nom', 'adresse', 'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_numero_piece')
+    list_filter = ('is_active', 'created_at', 'periodicite')
+
     def taux_occupation_visuel(self, obj):
         return f"{obj.taux_occupation}%"
     taux_occupation_visuel.short_description = "Taux d'occupation"
@@ -36,7 +44,6 @@ class BatimentAdmin(admin.ModelAdmin):
 
 @admin.register(Niveau)
 class NiveauAdmin(admin.ModelAdmin):
-    # AJOUT : 'taux_occupation' et 'revenues_totaux' par étage
     list_display = ('id', 'nom', 'batiment', 'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active')
     search_fields = ('nom', 'batiment__nom')
     list_filter = ('batiment', 'is_active')
@@ -59,16 +66,14 @@ class TypeBureauAdmin(admin.ModelAdmin):
 
 @admin.register(Bureau)
 class BureauAdmin(admin.ModelAdmin):
-    list_display = ('id', 'statut', 'numero', 'batiment', 'niveau', 'type', 'prix_unitaire', 'espace', 'prix', 'is_active')
+    list_display = ('id', 'numero', 'batiment', 'niveau', 'type', 'unite', 'espace', 'prix', 'is_active')
     search_fields = ('numero', 'batiment__nom')
     list_filter = ('batiment', 'niveau', 'type', 'is_active')
-    # CORRECTION : Seul le champ 'prix' doit être en readonly. L'utilisateur doit pouvoir saisir l'espace et l'unite !
     readonly_fields = ('prix',)
 
 
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
-    # AJOUT : Le 'statut_temporel' (À VENIR, EN COURS...) s'affiche dynamiquement
     list_display = ('id', 'client', 'bureau', 'date_debut', 'date_fin', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'bureau__numero')
     list_filter = ('is_active', 'date_debut', 'date_fin')
@@ -76,36 +81,31 @@ class ReservationAdmin(admin.ModelAdmin):
 
 @admin.register(Contrat)
 class ContratAdmin(admin.ModelAdmin):
-    list_display = ('id', 'client', 'created_by', 'reservation', 'date_debut', 'date_fin', 'montant', 'type_facturation', 'statut_temporel', 'is_active')
-    search_fields = ('client__user__first_name', 'client__user__last_name', 'reservation__bureau__numero')
+    # AJOUT : 'bureau' visible pour les contrats en location directe (sans réservation)
+    list_display = ('id', 'client', 'reservation', 'bureau', 'date_debut', 'date_fin', 'date_paiement', 'montant', 'statut_temporel', 'is_active')
+    search_fields = ('client__user__first_name', 'client__user__last_name', 'reservation__bureau__numero', 'bureau__numero')
     list_filter = ('is_active', 'date_debut', 'date_fin')
-    readonly_fields = ('montant',) # Géré automatiquement dans le modèle désormais
+    readonly_fields = ('montant',)
 
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    # AJOUT : Enregistrement de la table Location manquante
-    list_display = ('id', 'client', 'bureau', 'contrat', 'statut_temporel', 'is_active')
+    list_display = ('id', 'client', 'bureau', 'contrat', 'date_debut', 'date_fin', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'bureau__numero')
-    list_filter = ('is_active',)
+    list_filter = ('is_active', 'date_debut', 'date_fin')
+
 
 @admin.register(Paiement)
 class PaiementAdmin(admin.ModelAdmin):
-    # 1. Liste d'affichage claire
-    list_display = ('id', 'client', 'montant', 'reste_a_payer_visuel', 'statut', 'mode', 'contrat', 'location', 'date')
-    search_fields = ('client__user__first_name', 'client__user__last_name', 'contrat__id', 'location__id')
-    list_filter = ('statut', 'mode', 'date', 'annee_paye')
-    
-    # 2. OPTIMISATION SQL : Charge les relations en une seule requête
-    list_select_related = ('client__user', 'contrat', 'location')
+    list_display = ('id', 'client', 'montant', 'get_loyer_mensuel_30', 'mois_paye', 'annee_paye', 'reste_a_payer_visuel', 'statut', 'mode', 'contrat', 'location', 'date')
+    search_fields = ('client__user__first_name', 'client__user__last_name', 'contrat__id')
+    list_filter = ('statut', 'mode', 'date')
+    readonly_fields = ('montant', 'statut', 'reste_a_payer_visuel')
 
-    # 3. Affichage dynamique de la monnaie
+    @admin.display(description='Loyer Mensuel Prévu (30j)')
+    def get_loyer_mensuel_30(self, obj):
+        return f"{obj.loyer_mensuel_prevu_30_jours} CFA"
+
+    @admin.display(description='Reste à payer')
     def reste_a_payer_visuel(self, obj):
-        # Utilise FBU ou BIF pour correspondre à votre interface Angular
-        return f"{obj.reste_a_payer:,.2f} FBU"
-    reste_a_payer_visuel.short_description = "Reste à payer"
-
-    # 4. SÉCURITÉ : Passe l'administrateur connecté à la méthode save() du modèle
-    def save_model(self, request, obj, form, change):
-        # On extrait l'user de la requête et on le passe au save() personnalisé du modèle
-        obj.save(user=request.user)
+        return f"{obj.reste_a_payer} FBU"
