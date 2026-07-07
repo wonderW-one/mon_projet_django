@@ -41,7 +41,6 @@ class BatimentAdmin(admin.ModelAdmin):
         return f"{obj.revenues_totaux} CFA"
     revenues_totaux_visuel.short_description = "Revenus encaissés"
 
-
 @admin.register(Niveau)
 class NiveauAdmin(admin.ModelAdmin):
     list_display = ('id', 'nom', 'batiment', 'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active')

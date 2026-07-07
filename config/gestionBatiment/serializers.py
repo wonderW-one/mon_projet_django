@@ -411,6 +411,7 @@ class PaiementSerializer(serializers.ModelSerializer):
     updated_at = serializers.DateTimeField(read_only=True)
     is_active = serializers.BooleanField(default=True)
     
+    
     class Meta:
         model = Paiement
         fields = [

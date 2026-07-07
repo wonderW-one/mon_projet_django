@@ -508,5 +508,4 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
         total_deja_paye = sum(p.montant for p in autres_paiements)
         if self.statut == 'PAID':
             total_deja_paye += self.montant
-
         return max(loyer_attendu - total_deja_paye, Decimal('0.00'))

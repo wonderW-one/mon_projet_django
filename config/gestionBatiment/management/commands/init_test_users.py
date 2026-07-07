@@ -181,6 +181,7 @@ class Command(BaseCommand):
             }
         ]
 
+
         self.stdout.write('\nIDENTIFIANTS DE TEST:\n')
         for cred in credentials:
             self.stdout.write(f"\n{cred['role']}:")

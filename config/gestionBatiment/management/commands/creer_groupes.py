@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group
 class Command(BaseCommand):
     help = "Crée les groupes d'utilisateurs nécessaires pour les permissions de l'API"
 
+
     def handle(self, *args, **options):
         # Liste des rôles que vous avez définis dans vos permissions
         groupes_a_creer = ['ADMIN', 'TRAVAILLEUR', 'MANAGER', 'CLIENT']

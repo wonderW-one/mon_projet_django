@@ -423,7 +423,6 @@ class PaiementViewSet(BaseModelViewSet):
             return base_qs
         if role in CLIENT_ROLES and profile is not None:
             return base_qs.filter(client=profile)
-
         return Paiement.objects.none()
 
     def perform_create(self, serializer):

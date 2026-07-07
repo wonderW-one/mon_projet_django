@@ -26,7 +26,6 @@ def envoyer_push_local_test(user_id, titre, message):
     print(f"Message: {message}")
     print("="*40 + "\n")
 
-
 # --- Vos récepteurs de signaux restent inchangés ---
 
 @receiver(post_save, sender=Reservation)

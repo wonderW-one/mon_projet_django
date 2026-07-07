@@ -25,7 +25,6 @@ def envoyer_rappels_paiement():
         email = client.user.email
         if not email:
             continue
-
         nom = client.user.first_name or client.user.username
         periodicite_label = contrat.get_periodicite_display()
         bureau = contrat.bureau_effectif

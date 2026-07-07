@@ -18,7 +18,6 @@ router.register(r'contrats', ContratViewSet, basename='contrat')
 router.register(r'locations', LocationViewSet, basename='location')
 router.register(r'paiements', PaiementViewSet, basename='paiement')
 
-
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),

@@ -46,6 +46,7 @@ class Command(BaseCommand):
                 f"L'équipe de gestion."
             )
 
+
             try:
                 send_mail(
                     sujet, corps,

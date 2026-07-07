@@ -22,6 +22,5 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['client_id'] = profile.id if profile is not None else None
         return token
 
-
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer

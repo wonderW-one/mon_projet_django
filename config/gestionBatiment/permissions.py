@@ -362,7 +362,6 @@ class LocationPermission(BaseRolePermission):
 
         return False
 
-
 class PaiementPermission(BaseRolePermission):
     """
     Permissions pour PaiementViewSet:
