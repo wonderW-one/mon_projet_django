@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'rest_framework',              # CORRECTION : Placé AVANT son extension SimpleJWT
     'rest_framework_simplejwt',
     'django_filters',
+    'django_celery_beat',
     'phonenumbers',
     
     # Applications locales
@@ -187,3 +188,9 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS')
 EMAIL_PORT = config('EMAIL_PORT')
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+
+
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
