@@ -43,7 +43,7 @@ class ClientSerializer(serializers.ModelSerializer):
             'user_id', 'user_detail', 'username', 'password', 'email',
             'first_name', 'last_name', 'telephone', 'addresse',
             'date_naissance', 'lieu_naissance', 'nationalite', 'profession',
-            'type_piece_identite', 'numero_piece_identite', 'photo_profil',
+            'type_piece_identite', 'numero_piece_identite', 'photo_profil','role',
             'created_at', 'updated_at'
         ]
 
@@ -107,8 +107,7 @@ class ClientSerializer(serializers.ModelSerializer):
 
 class BatimentSerializer(serializers.ModelSerializer):
     proprietaire_type_piece_display = serializers.CharField(source='get_proprietaire_type_piece_display', read_only=True)
-    periodicite_display = serializers.CharField(source='get_periodicite_display', read_only=True)
-
+    
     class Meta:
         model = Batiment
         fields = [
@@ -117,7 +116,7 @@ class BatimentSerializer(serializers.ModelSerializer):
             'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_telephone',
             'proprietaire_email', 'proprietaire_adresse',
             'proprietaire_type_piece', 'proprietaire_type_piece_display', 'proprietaire_numero_piece',
-            'periodicite', 'periodicite_display'
+            
         ]
 
 
@@ -150,10 +149,15 @@ class BureauSerializer(serializers.ModelSerializer):
     type_detail = serializers.SerializerMethodField(read_only=True)
     batiment_detail = serializers.SerializerMethodField(read_only=True)
     niveau_detail = serializers.SerializerMethodField(read_only=True)
+    date_disponibilite_prevue = serializers.ReadOnlyField()
 
     class Meta:
         model = Bureau
-        fields = ['id', 'numero', 'type', 'type_detail', 'unite', 'espace', 'prix', 'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 'statut', 'created_at', 'updated_at', 'is_active']
+        fields = [
+            'id', 'numero', 'type', 'type_detail', 'unite', 'espace', 
+            'prix', 'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 'statut', 
+            'date_disponibilite_prevue'  # <-- Ajouté ici
+        ]
         read_only_fields = ['prix', 'statut']
 
     def get_type_detail(self, obj):
@@ -199,8 +203,12 @@ class BureauSerializer(serializers.ModelSerializer):
         return instance
 
 
+# serializers.py
+
 class ContratSerializer(serializers.ModelSerializer):
     montant = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    client_detail = serializers.SerializerMethodField(read_only=True)
+    #bureau_name = serializers.SerializerMethodField(source='bureau.numero',read_only=True)
     created_by = UserDetailSerializer(read_only=True)
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
@@ -208,7 +216,9 @@ class ContratSerializer(serializers.ModelSerializer):
     locations = serializers.SerializerMethodField(read_only=True)
     paiements = serializers.SerializerMethodField(read_only=True)
     document_contrat_signe = serializers.FileField(required=False, allow_null=True)
-
+    statut = serializers.ChoiceField(choices=Contrat.ContratStatus.choices, read_only=True)
+    periodicite_display = serializers.CharField(source='get_periodicite_display', read_only=True)
+ 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
@@ -216,16 +226,42 @@ class ContratSerializer(serializers.ModelSerializer):
             profile = getattr(request.user, 'client_profile', None)
             if profile and profile.role == 'CLIENT':
                 self.fields['document_contrat_signe'].read_only = True
+                self.fields['date_debut'].read_only = True   # AJOUT : fixée à la validation
+                self.fields['client'].read_only = True        # AJOUT : forcé par la vue
 
     class Meta:
         model = Contrat
         fields = [
-            'id', 'reservation', 'bureau', 'client', 'date_debut', 'date_fin',
+            'id', 'reservation', 'bureau', 'client', 'client_detail', 'statut', 'date_debut', 'date_fin',
             'date_paiement', 'montant', 'description',
             'created_by', 'created_at', 'updated_at', 'is_active',
-            'locations', 'paiements', 'document_contrat_signe'
+            'locations', 'paiements', 'periodicite', 'periodicite_display', 'document_contrat_signe'
         ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at', 'is_active', 'locations', 'paiements']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'is_active', 'locations', 'paiements', 'statut']
+
+    def get_client_detail(self, obj):
+        if obj.client:
+            return {
+                'id': obj.client.id,
+                'user': {
+                    'id': obj.client.user.id,
+                    'username': obj.client.user.username,
+                    'first_name': obj.client.user.first_name,
+                    'last_name': obj.client.user.last_name,
+                    'email': obj.client.user.email,
+                },
+                'telephone': str(obj.client.telephone) if obj.client.telephone else None,
+                'addresse': obj.client.addresse,
+                'date_naissance': obj.client.date_naissance,
+                'lieu_naissance': obj.client.lieu_naissance,
+                'nationalite': obj.client.nationalite,
+                'profession': obj.client.profession,
+                'type_piece_identite': obj.client.type_piece_identite,
+                'type_piece_identite_display': obj.client.get_type_piece_identite_display(),
+                'numero_piece_identite': obj.client.numero_piece_identite,
+                'photo_profil': obj.client.photo_profil.url if obj.client.photo_profil else None,
+            }
+        return None
 
     def validate(self, attrs):
         reservation = attrs.get('reservation') or (self.instance.reservation if self.instance else None)
@@ -361,6 +397,7 @@ class LocationSerializer(serializers.ModelSerializer):
 
 
 class PaiementSerializer(serializers.ModelSerializer):
+    client = serializers.PrimaryKeyRelatedField(queryset=Client.objects.all(), required=False, allow_null=True)
     client_detail = serializers.SerializerMethodField(read_only=True)
     created_by = UserDetailSerializer(read_only=True)
     mode = serializers.ChoiceField(choices=[('CASH', 'Espèces'), ('CARD', 'Carte bancaire'), ('TRANSFER', 'Virement bancaire')], default='CASH')
@@ -381,7 +418,7 @@ class PaiementSerializer(serializers.ModelSerializer):
             'client_detail', 'contrat', 'statut','mois_paye','annee_paye',
             'created_by', 'created_at', 'updated_at', 'is_active'
         ]
-        read_only_fields = ['created_by', 'statut', 'created_at', 'updated_at', 'is_active']
+        read_only_fields = ['created_by', 'statut', 'created_at', 'updated_at', 'is_active' , 'date']
 
     def get_client_detail(self, obj):
         if obj.client:

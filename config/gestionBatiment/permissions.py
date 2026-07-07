@@ -274,6 +274,8 @@ class ReservationPermission(BaseRolePermission):
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
             if user_client and obj.client.id == user_client.id:
+                if view.action == 'convertir_contrat' and request.method == 'POST':
+                    return True
                 return request.method in SAFE_METHODS
 
         return False
@@ -300,7 +302,7 @@ class ContratPermission(BaseRolePermission):
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
 
         if role in CLIENT_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS')
+            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
 
         return False
 
@@ -380,12 +382,15 @@ class PaiementPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            if getattr(view, 'action', None) == 'valider':
+            if getattr(view, 'action', None) == 'valider_paiement':
                 return True
             return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
 
+        current_action = getattr(view, 'action', None)
         if role in CLIENT_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
+            if current_action in ('valider_contrat', 'rejeter_contrat'):
+                return False  # le client ne peut jamais valider/rejeter
+            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
 
         return False
 
@@ -399,13 +404,13 @@ class PaiementPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            if getattr(view, 'action', None) == 'valider':
+            if getattr(view, 'action', None) == 'valider_paiement':
                 return True
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, 'client_profile', None)
-            if user_client and obj.client_id and obj.client_id == user_client.id:
-                return request.method in SAFE_METHODS
+            if user_client and obj.client.id == user_client.id:
+                return request.method in ('GET', 'HEAD', 'OPTIONS')
 
         return False

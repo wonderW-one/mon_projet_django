@@ -28,10 +28,10 @@ class BatimentAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'nom', 'adresse', 'nombre_etages',
         'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_telephone',
-        'periodicite', 'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active'
+         'taux_occupation_visuel', 'revenues_totaux_visuel', 'is_active'
     )
     search_fields = ('nom', 'adresse', 'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_numero_piece')
-    list_filter = ('is_active', 'created_at', 'periodicite')
+    list_filter = ('is_active', 'created_at')
 
     def taux_occupation_visuel(self, obj):
         return f"{obj.taux_occupation}%"
@@ -82,9 +82,9 @@ class ReservationAdmin(admin.ModelAdmin):
 @admin.register(Contrat)
 class ContratAdmin(admin.ModelAdmin):
     # AJOUT : 'bureau' visible pour les contrats en location directe (sans réservation)
-    list_display = ('id', 'client', 'reservation', 'bureau', 'date_debut', 'date_fin', 'date_paiement', 'montant', 'statut_temporel', 'is_active')
+    list_display = ('id', 'client', 'reservation', 'bureau', 'periodicite', 'date_debut', 'date_fin', 'date_paiement', 'montant', 'statut_temporel', 'is_active')
     search_fields = ('client__user__first_name', 'client__user__last_name', 'reservation__bureau__numero', 'bureau__numero')
-    list_filter = ('is_active', 'date_debut', 'date_fin')
+    list_filter = ('is_active', 'date_debut', 'date_fin', 'periodicite')
     readonly_fields = ('montant',)
 
 
@@ -104,7 +104,7 @@ class PaiementAdmin(admin.ModelAdmin):
 
     @admin.display(description='Loyer Mensuel Prévu (30j)')
     def get_loyer_mensuel_30(self, obj):
-        return f"{obj.loyer_mensuel_prevu_30_jours} CFA"
+        return f"{obj.loyer_mensuel_prevu_30_jours} FBU"
 
     @admin.display(description='Reste à payer')
     def reste_a_payer_visuel(self, obj):
