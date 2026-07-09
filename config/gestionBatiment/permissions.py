@@ -1,10 +1,9 @@
 from rest_framework import permissions
 from rest_framework.permissions import SAFE_METHODS
 
-
-ADMIN_ROLE = 'ADMIN'
-WORKER_ROLES = ['TRAVAILLEUR', 'MANAGER']
-CLIENT_ROLES = ['CLIENT']
+ADMIN_ROLE = "ADMIN"
+WORKER_ROLES = ["TRAVAILLEUR", "MANAGER"]
+CLIENT_ROLES = ["CLIENT"]
 
 
 class BaseRolePermission(permissions.BasePermission):
@@ -19,11 +18,11 @@ class BaseRolePermission(permissions.BasePermission):
         if user.is_superuser:
             return ADMIN_ROLE
 
-        profile = getattr(user, 'client_profile', None)
+        profile = getattr(user, "client_profile", None)
         if profile is not None:
             return profile.role
 
-        groups = set(user.groups.values_list('name', flat=True))
+        groups = set(user.groups.values_list("name", flat=True))
         if ADMIN_ROLE in groups:
             return ADMIN_ROLE
         for role in WORKER_ROLES:
@@ -43,7 +42,7 @@ class ClientPermission(BaseRolePermission):
     """
 
     def has_permission(self, request, view):
-        if getattr(view, 'action', None) == 'inscription':
+        if getattr(view, "action", None) == "inscription":
             return True
 
         if not request.user or not request.user.is_authenticated:
@@ -55,12 +54,12 @@ class ClientPermission(BaseRolePermission):
             return True
 
         if role in CLIENT_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'PATCH', 'PUT')
+            return request.method in ("GET", "HEAD", "OPTIONS", "PATCH", "PUT")
 
         return False
 
     def has_object_permission(self, request, view, obj):
-        if getattr(view, 'action', None) == 'inscription':
+        if getattr(view, "action", None) == "inscription":
             return True
 
         if not request.user or not request.user.is_authenticated:
@@ -252,10 +251,10 @@ class ReservationPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         if role in CLIENT_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         return False
 
@@ -272,9 +271,9 @@ class ReservationPermission(BaseRolePermission):
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
-            user_client = getattr(request.user, 'client_profile', None)
+            user_client = getattr(request.user, "client_profile", None)
             if user_client and obj.client.id == user_client.id:
-                if view.action == 'convertir_contrat' and request.method == 'POST':
+                if view.action == "convertir_contrat" and request.method == "POST":
                     return True
                 return request.method in SAFE_METHODS
 
@@ -299,10 +298,10 @@ class ContratPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         if role in CLIENT_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         return False
 
@@ -319,9 +318,9 @@ class ContratPermission(BaseRolePermission):
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
-            user_client = getattr(request.user, 'client_profile', None)
+            user_client = getattr(request.user, "client_profile", None)
             if user_client and obj.client.id == user_client.id:
-                return request.method in ('GET', 'HEAD', 'OPTIONS')
+                return request.method in ("GET", "HEAD", "OPTIONS")
 
         return False
 
@@ -344,7 +343,7 @@ class LocationPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         return False
 
@@ -361,6 +360,7 @@ class LocationPermission(BaseRolePermission):
             return request.method in SAFE_METHODS
 
         return False
+
 
 class PaiementPermission(BaseRolePermission):
     """
@@ -381,15 +381,15 @@ class PaiementPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            if getattr(view, 'action', None) == 'valider_paiement':
+            if getattr(view, "action", None) == "valider_paiement":
                 return True
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
-        current_action = getattr(view, 'action', None)
+        current_action = getattr(view, "action", None)
         if role in CLIENT_ROLES:
-            if current_action in ('valider_contrat', 'rejeter_contrat'):
+            if current_action in ("valider_contrat", "rejeter_contrat"):
                 return False  # le client ne peut jamais valider/rejeter
-            return request.method in ('GET', 'HEAD', 'OPTIONS', 'POST')
+            return request.method in ("GET", "HEAD", "OPTIONS", "POST")
 
         return False
 
@@ -403,13 +403,13 @@ class PaiementPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            if getattr(view, 'action', None) == 'valider_paiement':
+            if getattr(view, "action", None) == "valider_paiement":
                 return True
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
-            user_client = getattr(request.user, 'client_profile', None)
+            user_client = getattr(request.user, "client_profile", None)
             if user_client and obj.client.id == user_client.id:
-                return request.method in ('GET', 'HEAD', 'OPTIONS')
+                return request.method in ("GET", "HEAD", "OPTIONS")
 
         return False

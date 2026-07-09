@@ -1,12 +1,15 @@
 # gestionBatiment/tasks.py
 from datetime import timedelta
+
 from celery import shared_task
-from django.core.mail import send_mail
 from django.conf import settings
+from django.core.mail import send_mail
 from django.utils import timezone
+
 from .models import Contrat
 
 JOURS_AVANT_RAPPEL = 5
+
 
 @shared_task
 def envoyer_rappels_paiement():
@@ -17,7 +20,7 @@ def envoyer_rappels_paiement():
         statut=Contrat.ContratStatus.VALIDE,
         is_active=True,
         date_fin=date_cible,
-    ).select_related('client__user')
+    ).select_related("client__user")
 
     envoyes = 0
     for contrat in contrats:

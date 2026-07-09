@@ -1,9 +1,10 @@
 from django.apps import AppConfig
 
+
 class GestionbatimentConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'gestionBatiment'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "gestionBatiment"
 
     def ready(self):
         # Importation obligatoire des signaux pour exécution au démarrage
-        import gestionBatiment.signals
+        import gestionBatiment.signals  # noqa: F401

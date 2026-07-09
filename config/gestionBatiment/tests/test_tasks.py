@@ -15,7 +15,6 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase
 from freezegun import freeze_time
-
 from gestionBatiment.models import Batiment, Bureau, Client, Contrat, TypeBureau
 from gestionBatiment.tasks import JOURS_AVANT_RAPPEL, envoyer_rappels_paiement
 
@@ -32,14 +31,21 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
         self.client_profile = Client.objects.create(user=user)
 
         admin_user = User.objects.create_user(username="admin_bat")
-        batiment = Batiment.objects.create(user=admin_user, nom="Tour A", adresse="Rue X")
+        batiment = Batiment.objects.create(
+            user=admin_user, nom="Tour A", adresse="Rue X"
+        )
         type_bureau = TypeBureau.objects.create(nom="Open space")
         self.bureau = Bureau.objects.create(
             numero="101", type=type_bureau, unite=10, espace=100, batiment=batiment
         )
 
-    def _creer_contrat(self, date_fin, statut=Contrat.ContratStatus.VALIDE,
-                        actif=True, periodicite="MENSUEL"):
+    def _creer_contrat(
+        self,
+        date_fin,
+        statut=Contrat.ContratStatus.VALIDE,
+        actif=True,
+        periodicite="MENSUEL",
+    ):
         """
         Crée un contrat direct (sans réservation) rattaché au bureau de test.
         Comme aucun `user=` n'est passé à .save(), la logique de rétrogradation
@@ -60,7 +66,9 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
 
     @freeze_time(DATE_DU_JOUR)
     def test_envoie_un_email_pour_contrat_a_echeance_dans_5_jours(self):
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
         self._creer_contrat(date_fin=date_cible)
 
         resultat = envoyer_rappels_paiement()
@@ -74,8 +82,12 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
 
     @freeze_time(DATE_DU_JOUR)
     def test_ignore_contrat_non_valide(self):
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
-        self._creer_contrat(date_fin=date_cible, statut=Contrat.ContratStatus.EN_ATTENTE)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
+        self._creer_contrat(
+            date_fin=date_cible, statut=Contrat.ContratStatus.EN_ATTENTE
+        )
 
         resultat = envoyer_rappels_paiement()
 
@@ -84,7 +96,9 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
 
     @freeze_time(DATE_DU_JOUR)
     def test_ignore_contrat_inactif(self):
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
         self._creer_contrat(date_fin=date_cible, actif=False)
 
         envoyer_rappels_paiement()
@@ -105,7 +119,9 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
     def test_ignore_client_sans_email(self):
         self.client_profile.user.email = ""
         self.client_profile.user.save()
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
         self._creer_contrat(date_fin=date_cible)
 
         resultat = envoyer_rappels_paiement()
@@ -115,7 +131,9 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
 
     @freeze_time(DATE_DU_JOUR)
     def test_sujet_email_mentionne_la_periodicite(self):
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
         self._creer_contrat(date_fin=date_cible, periodicite="TRIMESTRIEL")
 
         envoyer_rappels_paiement()
@@ -125,7 +143,9 @@ class EnvoyerRappelsPaiementTestCase(TestCase):
 
     @freeze_time(DATE_DU_JOUR)
     def test_plusieurs_contrats_generent_plusieurs_emails(self):
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
 
         # deuxième client + bureau pour ne pas violer la contrainte d'unicité
         user2 = User.objects.create_user(
@@ -162,7 +182,9 @@ class CommandeEnvoyerRappelsPaiementTestCase(TestCase):
         )
         self.client_profile = Client.objects.create(user=user)
         admin_user = User.objects.create_user(username="admin_bat")
-        batiment = Batiment.objects.create(user=admin_user, nom="Tour A", adresse="Rue X")
+        batiment = Batiment.objects.create(
+            user=admin_user, nom="Tour A", adresse="Rue X"
+        )
         self.bureau = Bureau.objects.create(
             numero="101", batiment=batiment, unite=10, espace=100
         )
@@ -170,9 +192,12 @@ class CommandeEnvoyerRappelsPaiementTestCase(TestCase):
     @freeze_time(DATE_DU_JOUR)
     def test_commande_affiche_le_resultat(self):
         from io import StringIO
+
         from django.core.management import call_command
 
-        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(days=JOURS_AVANT_RAPPEL)
+        date_cible = date.fromisoformat(DATE_DU_JOUR) + timedelta(
+            days=JOURS_AVANT_RAPPEL
+        )
         Contrat.objects.create(
             client=self.client_profile,
             bureau=self.bureau,

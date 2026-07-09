@@ -18,10 +18,10 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase, override_settings
 from freezegun import freeze_time
-
-from config.celery import app as celery_app
 from gestionBatiment.models import Batiment, Bureau, Client, Contrat
 from gestionBatiment.tasks import JOURS_AVANT_RAPPEL, envoyer_rappels_paiement
+
+from config.celery import app as celery_app
 
 
 class CeleryAppConfigTestCase(TestCase):
@@ -51,7 +51,9 @@ class CeleryExecutionAsyncTestCase(TestCase):
         )
         self.client_profile = Client.objects.create(user=user)
         admin_user = User.objects.create_user(username="admin_bat")
-        batiment = Batiment.objects.create(user=admin_user, nom="Tour A", adresse="Rue X")
+        batiment = Batiment.objects.create(
+            user=admin_user, nom="Tour A", adresse="Rue X"
+        )
         self.bureau = Bureau.objects.create(
             numero="101", batiment=batiment, unite=10, espace=100
         )

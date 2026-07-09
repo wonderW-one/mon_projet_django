@@ -1,47 +1,74 @@
 import logging
+
+from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.mail import send_mail
 from django.http import HttpResponse
 from django.shortcuts import render
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
-from datetime import timedelta
-from rest_framework import viewsets, status
-from rest_framework import permissions
-from rest_framework.permissions import AllowAny
-from rest_framework.response import Response
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
-from .serializers import (
-    ClientSerializer, BatimentSerializer, NiveauSerializer,
-    TypeBureauSerializer, BureauSerializer, LocationSerializer,
-    ContratSerializer, PaiementSerializer, ReservationSerializer
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+
+from .models import (
+    Batiment,
+    Bureau,
+    Client,
+    Contrat,
+    Location,
+    Niveau,
+    Paiement,
+    Reservation,
+    TypeBureau,
 )
-from .models import Client, Batiment, TypeBureau, Bureau, Niveau, Contrat, Location, Paiement, Reservation
 from .permissions import (
-    ClientPermission, BatimentPermission, NiveauPermission,
-    TypeBureauPermission, BureauPermission, ReservationPermission,
-    ContratPermission, LocationPermission, PaiementPermission,
-    ADMIN_ROLE, WORKER_ROLES, CLIENT_ROLES
+    ADMIN_ROLE,
+    CLIENT_ROLES,
+    WORKER_ROLES,
+    BatimentPermission,
+    BureauPermission,
+    ClientPermission,
+    ContratPermission,
+    LocationPermission,
+    NiveauPermission,
+    PaiementPermission,
+    ReservationPermission,
+    TypeBureauPermission,
+)
+from .serializers import (
+    BatimentSerializer,
+    BureauSerializer,
+    ClientSerializer,
+    ContratSerializer,
+    LocationSerializer,
+    NiveauSerializer,
+    PaiementSerializer,
+    ReservationSerializer,
+    TypeBureauSerializer,
 )
 
-from django.core.mail import send_mail
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.decorators import action
-from django.conf import settings
+# from datetime import timedelta
+
+
 logger = logging.getLogger(__name__)
+
 
 class BaseModelViewSet(viewsets.ModelViewSet):
     """Base viewset gérant les erreurs de validation ET implémentant le Soft-Delete global."""
 
     def _format_django_validation_error(self, exc):
-        if hasattr(exc, 'message_dict'):
+        if hasattr(exc, "message_dict"):
             return exc.message_dict
-        if hasattr(exc, 'error_dict'):
-            return {k: v.messages if hasattr(v, 'messages') else v for k, v in exc.error_dict.items()}
-        if hasattr(exc, 'messages'):
-            return {'detail': exc.messages}
-        return {'detail': str(exc)}
+        if hasattr(exc, "error_dict"):
+            return {
+                k: v.messages if hasattr(v, "messages") else v
+                for k, v in exc.error_dict.items()
+            }
+        if hasattr(exc, "messages"):
+            return {"detail": exc.messages}
+        return {"detail": str(exc)}
 
     def create(self, request, *args, **kwargs):
         try:
@@ -68,24 +95,28 @@ class BaseModelViewSet(viewsets.ModelViewSet):
         """
         instance = self.get_object()
 
-        if hasattr(instance, 'is_active'):
+        if hasattr(instance, "is_active"):
             instance.is_active = False
-            instance.save(user=request.user) if hasattr(instance, 'save') else instance.save()
+            (
+                instance.save(user=request.user)
+                if hasattr(instance, "save")
+                else instance.save()
+            )
             return Response(
                 {"detail": "L'élément a été archivé avec succès (Soft-delete)."},
-                status=status.HTTP_200_OK
+                status=status.HTTP_200_OK,
             )
 
         # Fallback au cas où le modèle n'aurait pas le champ is_active
         return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
-        if getattr(self, 'permission_classes', None):
+        if getattr(self, "permission_classes", None):
             return [permission() for permission in self.permission_classes]
         return [IsAuthenticated()]
 
     def get_client_profile(self):
-        return getattr(self.request.user, 'client_profile', None)
+        return getattr(self.request.user, "client_profile", None)
 
     def get_user_role(self):
         user = self.request.user
@@ -98,7 +129,7 @@ class BaseModelViewSet(viewsets.ModelViewSet):
         if profile is not None:
             return profile.role
 
-        groups = set(user.groups.values_list('name', flat=True))
+        groups = set(user.groups.values_list("name", flat=True))
         if ADMIN_ROLE in groups:
             return ADMIN_ROLE
         for role in WORKER_ROLES:
@@ -111,48 +142,57 @@ class BaseModelViewSet(viewsets.ModelViewSet):
 
 # ==================== Vues simples ====================
 
+
 def hello(request):
-    return HttpResponse('<h1>Bienvenue dans la gestion de bâtiments!</h1>')
+    return HttpResponse("<h1>Bienvenue dans la gestion de bâtiments!</h1>")
+
 
 def index(request):
     batiments = Batiment.objects.filter(is_active=True)
     bureaux = Bureau.objects.filter(is_active=True)
     context = {
-        'batiments': batiments,
-        'bureaux': bureaux,
-        'nombre_batiments': batiments.count(),
-        'nombre_bureaux': bureaux.count(),
+        "batiments": batiments,
+        "bureaux": bureaux,
+        "nombre_batiments": batiments.count(),
+        "nombre_bureaux": bureaux.count(),
     }
-    return render(request, 'gestionBatiment/index.html', context)
+    return render(request, "gestionBatiment/index.html", context)
 
 
 # ==================== ViewSets API REST ====================
 
-class ClientViewSet(BaseModelViewSet):
-   """ViewSet pour gérer les Clients"""
-   serializer_class = ClientSerializer
-   permission_classes = [ClientPermission]
-   ordering = ['user_id']
 
-   def get_queryset(self):
+class ClientViewSet(BaseModelViewSet):
+    """ViewSet pour gérer les Clients"""
+
+    serializer_class = ClientSerializer
+    permission_classes = [ClientPermission]
+    ordering = ["user_id"]
+
+    def get_queryset(self):
         role = self.get_user_role()
         profile = self.get_client_profile()
         # Filtrer pour ne lister que les profils encore actifs
-        base_query = Client.objects.filter(is_active=True).select_related('user')
+        base_query = Client.objects.filter(is_active=True).select_related("user")
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
-            return base_query.order_by('user_id')
+            return base_query.order_by("user_id")
         if role in CLIENT_ROLES and profile is not None:
             return base_query.filter(id=profile.id)
 
         return Client.objects.none()
 
-   @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='inscription')
-   def inscription(self, request):
+    @action(
+        detail=False,
+        methods=["post"],
+        permission_classes=[AllowAny],
+        url_path="inscription",
+    )
+    def inscription(self, request):
         if request.user.is_authenticated and self.get_client_profile() is not None:
             return Response(
                 {"detail": "Vous avez déjà un profil client créé."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         serializer = self.get_serializer(data=request.data)
@@ -161,16 +201,18 @@ class ClientViewSet(BaseModelViewSet):
                 client = serializer.save(user=request.user)
             else:
                 client = serializer.save()
-            return Response(self.get_serializer(client).data, status=status.HTTP_201_CREATED)
+            return Response(
+                self.get_serializer(client).data, status=status.HTTP_201_CREATED
+            )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-   @action(detail=False, methods=['get'], url_path='mon-profil')
-   def mon_profil(self, request):
+    @action(detail=False, methods=["get"], url_path="mon-profil")
+    def mon_profil(self, request):
         profile = self.get_client_profile()
         if profile is None or not profile.is_active:
             return Response(
                 {"has_profile": False, "detail": "Aucun profil client actif trouvé."},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         serializer = self.get_serializer(profile)
@@ -181,6 +223,7 @@ class ClientViewSet(BaseModelViewSet):
 
 class BatimentViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Bâtiments"""
+
     serializer_class = BatimentSerializer
     permission_classes = [BatimentPermission]
 
@@ -196,26 +239,29 @@ class BatimentViewSet(BaseModelViewSet):
     def perform_update(self, serializer):
         serializer.save(user=self.request.user)
 
-    @action(detail=False, methods=['get'], url_path='actifs')
+    @action(detail=False, methods=["get"], url_path="actifs")
     def actifs(self, request):
         batiments = Batiment.objects.filter(is_active=True)
         serializer = self.get_serializer(batiments, many=True)
         return Response(serializer.data)
 
-    @action(detail=True, methods=['get'], url_path='statistiques')
+    @action(detail=True, methods=["get"], url_path="statistiques")
     def statistiques(self, request, pk=None):
         batiment = self.get_object()
-        return Response({
-            'id': batiment.id,
-            'nom': batiment.nom,
-            'taux_occupation': batiment.taux_occupation,
-            'revenues_totaux': batiment.revenues_totaux,
-            'nombre_bureaux': batiment.bureaux.filter(is_active=True).count(),
-        })
+        return Response(
+            {
+                "id": batiment.id,
+                "nom": batiment.nom,
+                "taux_occupation": batiment.taux_occupation,
+                "revenues_totaux": batiment.revenues_totaux,
+                "nombre_bureaux": batiment.bureaux.filter(is_active=True).count(),
+            }
+        )
 
 
 class NiveauViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Niveaux"""
+
     serializer_class = NiveauSerializer
     permission_classes = [NiveauPermission]
 
@@ -228,6 +274,7 @@ class NiveauViewSet(BaseModelViewSet):
 
 class TypeBureauViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Types de Bureau"""
+
     serializer_class = TypeBureauSerializer
     permission_classes = [TypeBureauPermission]
 
@@ -240,6 +287,7 @@ class TypeBureauViewSet(BaseModelViewSet):
 
 class BureauViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Bureaux"""
+
     serializer_class = BureauSerializer
     permission_classes = [BureauPermission]
 
@@ -255,7 +303,7 @@ class BureauViewSet(BaseModelViewSet):
 
         return Bureau.objects.none()
 
-    @action(detail=False, methods=['get'], url_path='disponibles')
+    @action(detail=False, methods=["get"], url_path="disponibles")
     def disponibles(self, request):
         qs = self.get_queryset().filter(statut=Bureau.BureauStatus.DISPONIBLE)
         serializer = self.get_serializer(qs, many=True)
@@ -264,6 +312,7 @@ class BureauViewSet(BaseModelViewSet):
 
 class ReservationViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Réservations"""
+
     serializer_class = ReservationSerializer
     permission_classes = [ReservationPermission]
 
@@ -287,31 +336,36 @@ class ReservationViewSet(BaseModelViewSet):
             reservation = serializer.save()
         reservation.bureau.statut = Bureau.BureauStatus.OCCUPE
         reservation.bureau.save()
-    @action(detail=True, methods=['post'], url_path='annuler')
+
+    @action(detail=True, methods=["post"], url_path="annuler")
     def annuler(self, request, pk=None):
         reservation = self.get_object()
         reservation.is_active = False
         reservation.save()
 
         bureau = reservation.bureau
-        autre_resa_active = Reservation.objects.filter(
+        autre_resa_active = (
+            Reservation.objects.filter(bureau=bureau, is_active=True)
+            .exclude(pk=reservation.pk)
+            .exists()
+        )
+        autre_contrat_actif = Contrat.objects.filter(
             bureau=bureau, is_active=True
-        ).exclude(pk=reservation.pk).exists()
-        autre_contrat_actif = Contrat.objects.filter(bureau=bureau, is_active=True).exists()
+        ).exists()
 
         if not autre_resa_active and not autre_contrat_actif:
             bureau.statut = Bureau.BureauStatus.DISPONIBLE
             bureau.save()
 
-        return Response({'detail': 'Réservation annulée.'}, status=status.HTTP_200_OK)
+        return Response({"detail": "Réservation annulée."}, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], url_path='convertir-contrat')
+    @action(detail=True, methods=["post"], url_path="convertir-contrat")
     def convertir_contrat(self, request, pk=None):
         reservation = self.get_object()
-        if hasattr(reservation, 'contrat') and reservation.contrat:
+        if hasattr(reservation, "contrat") and reservation.contrat:
             return Response(
-                {'detail': 'Cette réservation a déjà un contrat associé.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Cette réservation a déjà un contrat associé."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         contrat = Contrat(
@@ -327,9 +381,8 @@ class ReservationViewSet(BaseModelViewSet):
             bureau.statut = Bureau.BureauStatus.OCCUPE
             bureau.save()
 
-        serializer = ContratSerializer(contrat, context={'request': request})
+        serializer = ContratSerializer(contrat, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
 
 
 class ContratViewSet(BaseModelViewSet):
@@ -362,16 +415,21 @@ class ContratViewSet(BaseModelViewSet):
                 bureau.statut = Bureau.BureauStatus.OCCUPE
                 bureau.save()
 
-    @action(detail=True, methods=['post'], url_path='valider-contrat')
+    @action(detail=True, methods=["post"], url_path="valider-contrat")
     def valider_contrat(self, request, pk=None):
         contrat = self.get_object()
 
         if contrat.statut == Contrat.ContratStatus.VALIDE:
-            return Response({'detail': 'Ce contrat est déjà validé.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Ce contrat est déjà validé."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         contrat.statut = Contrat.ContratStatus.VALIDE
         if not contrat.date_debut:
-            contrat.date_debut = timezone.now().date()  # jour de la signature = jour de validation
+            contrat.date_debut = (
+                timezone.now().date()
+            )  # jour de la signature = jour de validation
         contrat.save(user=request.user)
 
         bureau = contrat.bureau_effectif
@@ -382,17 +440,20 @@ class ContratViewSet(BaseModelViewSet):
         serializer = self.get_serializer(contrat)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], url_path='rejeter-contrat')
+    @action(detail=True, methods=["post"], url_path="rejeter-contrat")
     def rejeter_contrat(self, request, pk=None):
         contrat = self.get_object()
         contrat.statut = Contrat.ContratStatus.REJETE
         contrat.is_active = False
         contrat.save(user=request.user)
-        return Response({'detail': 'Demande de contrat rejetée.'}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Demande de contrat rejetée."}, status=status.HTTP_200_OK
+        )
 
 
 class LocationViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Locations"""
+
     serializer_class = LocationSerializer
     permission_classes = [LocationPermission]
 
@@ -411,6 +472,7 @@ class LocationViewSet(BaseModelViewSet):
 
 class PaiementViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Paiements"""
+
     serializer_class = PaiementSerializer
     permission_classes = [PaiementPermission]
 
@@ -429,7 +491,7 @@ class PaiementViewSet(BaseModelViewSet):
         # NOUVEAU : sans ceci, created_by reste toujours null (perte de traçabilité)
         serializer.save(user=self.request.user)
 
-    @action(detail=True, methods=['post'], url_path='valider-paiement')
+    @action(detail=True, methods=["post"], url_path="valider-paiement")
     def valider_paiement(self, request, pk=None):
         paiement = self.get_object()
         paiement.statut = Paiement.PaiementStatus.COMPLETED
@@ -438,7 +500,9 @@ class PaiementViewSet(BaseModelViewSet):
         try:
             # 1. Récupération des informations du client et du paiement
             email_client = paiement.client.user.email
-            nom_client = paiement.client.user.first_name or paiement.client.user.username
+            nom_client = (
+                paiement.client.user.first_name or paiement.client.user.username
+            )
             montant = paiement.montant
 
             # Récupère le nom du mois en français (ex: "Janvier") au lieu du chiffre
@@ -466,8 +530,8 @@ class PaiementViewSet(BaseModelViewSet):
                     sujet,
                     corps_email,
                     settings.EMAIL_HOST_USER,  # Votre adresse d'expédition configurée
-                    [email_client],            # L'adresse du client
-                    fail_silently=False,        # True évite de bloquer l'API si le serveur d'envoi d'e-mail a un problème
+                    [email_client],  # L'adresse du client
+                    fail_silently=False,  # True évite de bloquer l'API si le serveur d'envoi d'e-mail a un problème
                 )
         except Exception as e:
             logger.error(e)

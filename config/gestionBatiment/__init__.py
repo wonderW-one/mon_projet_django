@@ -1,1 +1,1 @@
-default_app_config = 'gestionBatiment.apps.GestionbatimentConfig'
+default_app_config = "gestionBatiment.apps.GestionbatimentConfig"
