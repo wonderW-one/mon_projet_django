@@ -90,7 +90,7 @@ class ClientSerializer(serializers.ModelSerializer):
         for field in ['username', 'email', 'first_name', 'last_name']:
             if field in validated_data:
                 user_data[field] = validated_data.pop(field)
-        
+
         password = validated_data.pop('password', None)
 
         with transaction.atomic():
@@ -107,7 +107,7 @@ class ClientSerializer(serializers.ModelSerializer):
 
 class BatimentSerializer(serializers.ModelSerializer):
     proprietaire_type_piece_display = serializers.CharField(source='get_proprietaire_type_piece_display', read_only=True)
-    
+
     class Meta:
         model = Batiment
         fields = [
@@ -116,7 +116,7 @@ class BatimentSerializer(serializers.ModelSerializer):
             'proprietaire_nom', 'proprietaire_prenom', 'proprietaire_telephone',
             'proprietaire_email', 'proprietaire_adresse',
             'proprietaire_type_piece', 'proprietaire_type_piece_display', 'proprietaire_numero_piece',
-            
+
         ]
 
 
@@ -126,7 +126,7 @@ class NiveauSerializer(serializers.ModelSerializer):
     class Meta:
         model = Niveau
         fields = ['id', 'nom', 'batiment', 'batiment_detail', 'created_at', 'updated_at', 'is_active']
-    
+
     def get_batiment_detail(self, obj):
         if obj.batiment:
             return {
@@ -154,8 +154,8 @@ class BureauSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bureau
         fields = [
-            'id', 'numero', 'type', 'type_detail', 'unite', 'espace', 
-            'prix', 'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 'statut', 
+            'id', 'numero', 'type', 'type_detail', 'unite', 'espace',
+            'prix', 'batiment', 'batiment_detail', 'niveau', 'niveau_detail', 'statut',
             'date_disponibilite_prevue'  # <-- Ajouté ici
         ]
         read_only_fields = ['prix', 'statut']
@@ -218,7 +218,7 @@ class ContratSerializer(serializers.ModelSerializer):
     document_contrat_signe = serializers.FileField(required=False, allow_null=True)
     statut = serializers.ChoiceField(choices=Contrat.ContratStatus.choices, read_only=True)
     periodicite_display = serializers.CharField(source='get_periodicite_display', read_only=True)
- 
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
@@ -335,16 +335,16 @@ class ReservationSerializer(serializers.ModelSerializer):
                 'numero_piece_identite': obj.client.numero_piece_identite,
                 'photo_profil': obj.client.photo_profil.url if obj.client.photo_profil else None,
             }
-        return None 
+        return None
     #Fonction pour masque le champ client aux Clients connecte mais permettre les admins de voir les champs
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         request = self.context.get('request')
         if request and request.user and request.user.is_authenticated:
             if hasattr(request.user, 'client_profile') and request.user.client_profile:
                 profile = request.user.client_profile
-                
+
                 if profile.role == 'CLIENT':
                     self.fields['client'].read_only = True
 
@@ -410,8 +410,8 @@ class PaiementSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(read_only=True)
     updated_at = serializers.DateTimeField(read_only=True)
     is_active = serializers.BooleanField(default=True)
-    
-    
+
+
     class Meta:
         model = Paiement
         fields = [
@@ -444,8 +444,8 @@ class PaiementSerializer(serializers.ModelSerializer):
                 'photo_profil': obj.client.photo_profil.url if obj.client.photo_profil else None,
             }
         return None
-    
-        
+
+
     def validate(self, attrs):
         client = attrs.get('client')
         contrat = attrs.get('contrat')
@@ -502,4 +502,3 @@ class PaiementSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save(user=user)
         return instance
-        

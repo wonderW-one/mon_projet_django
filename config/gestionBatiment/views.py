@@ -12,7 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from .serializers import (
-    ClientSerializer, BatimentSerializer, NiveauSerializer, 
+    ClientSerializer, BatimentSerializer, NiveauSerializer,
     TypeBureauSerializer, BureauSerializer, LocationSerializer,
     ContratSerializer, PaiementSerializer, ReservationSerializer
 )
@@ -63,22 +63,22 @@ class BaseModelViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         """
-        SURCHARGE SÉCURITÉ : Intercepte le DELETE pour faire un Soft-Delete 
+        SURCHARGE SÉCURITÉ : Intercepte le DELETE pour faire un Soft-Delete
         au lieu d'une destruction définitive en base de données.
         """
         instance = self.get_object()
-        
+
         if hasattr(instance, 'is_active'):
             instance.is_active = False
             instance.save(user=request.user) if hasattr(instance, 'save') else instance.save()
             return Response(
-                {"detail": "L'élément a été archivé avec succès (Soft-delete)."}, 
+                {"detail": "L'élément a été archivé avec succès (Soft-delete)."},
                 status=status.HTTP_200_OK
             )
-        
+
         # Fallback au cas où le modèle n'aurait pas le champ is_active
         return super().destroy(request, *args, **kwargs)
-        
+
     def get_permissions(self):
         if getattr(self, 'permission_classes', None):
             return [permission() for permission in self.permission_classes]
@@ -144,17 +144,17 @@ class ClientViewSet(BaseModelViewSet):
             return base_query.order_by('user_id')
         if role in CLIENT_ROLES and profile is not None:
             return base_query.filter(id=profile.id)
-        
+
         return Client.objects.none()
 
    @action(detail=False, methods=['post'], permission_classes=[AllowAny], url_path='inscription')
    def inscription(self, request):
         if request.user.is_authenticated and self.get_client_profile() is not None:
             return Response(
-                {"detail": "Vous avez déjà un profil client créé."}, 
+                {"detail": "Vous avez déjà un profil client créé."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             if request.user.is_authenticated:
@@ -177,8 +177,8 @@ class ClientViewSet(BaseModelViewSet):
         data = serializer.data
         data["has_profile"] = True
         return Response(data, status=status.HTTP_200_OK)
-    
-    
+
+
 class BatimentViewSet(BaseModelViewSet):
     """ViewSet pour gérer les Bâtiments"""
     serializer_class = BatimentSerializer
@@ -440,17 +440,17 @@ class PaiementViewSet(BaseModelViewSet):
             email_client = paiement.client.user.email
             nom_client = paiement.client.user.first_name or paiement.client.user.username
             montant = paiement.montant
-            
+
             # Récupère le nom du mois en français (ex: "Janvier") au lieu du chiffre
-            mois = paiement.get_mois_paye_display() 
+            mois = paiement.get_mois_paye_display()
             annee = paiement.annee_paye
-            
+
             # Récupère le libellé propre du mode de paiement (ex: "Espèces")
             mode_paiement = paiement.get_mode_display()
 
             if email_client:  # On s'assure que le client a bien une adresse mail
                 sujet = f"Confirmation de votre paiement - {mois} {annee}"
-                
+
                 corps_email = (
                     f"Bonjour {nom_client},\n\n"
                     f"Nous vous confirmons la bonne réception de votre paiement.\n\n"
@@ -472,10 +472,8 @@ class PaiementViewSet(BaseModelViewSet):
         except Exception as e:
             logger.error(e)
             # Optionnel : logguez l'erreur ici si l'envoi échoue pour ne pas bloquer la validation
-        
+
         # ------------------------------------------
 
         serializer = self.get_serializer(paiement)
-        return Response(serializer.data, status=status.HTTP_200_OK)    
-    
-    
+        return Response(serializer.data, status=status.HTTP_200_OK)

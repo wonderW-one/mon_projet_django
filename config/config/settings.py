@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Librairies tierces
     'corsheaders',
     'rest_framework',              # CORRECTION : Placé AVANT son extension SimpleJWT
@@ -47,7 +47,7 @@ INSTALLED_APPS = [
     'django_filters',
     'django_celery_beat',
     'phonenumbers',
-    
+
     # Applications locales
     'gestionBatiment',
 ]

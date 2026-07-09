@@ -34,9 +34,9 @@ def notification_reservation(sender, instance, created, **kwargs):
         client_user = instance.client.user
         telephone = instance.client.telephone
         bureau_num = instance.bureau.numero
-        
+
         message = f"Bonjour {client_user.first_name}, votre réservation pour le Bureau {bureau_num} a été enregistrée."
-        
+
         # Appels des simulateurs locaux
         envoyer_sms_local_test(telephone, message)
         envoyer_push_local_test(client_user.id, "Réservation Confirmée", message)

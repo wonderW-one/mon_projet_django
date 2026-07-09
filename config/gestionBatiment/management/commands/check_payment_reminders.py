@@ -56,7 +56,7 @@ class Command(BaseCommand):
                         "Cordialement."
                     )
 
-                    
+
                 try:
                     send_mail(
                         subject=sujet,

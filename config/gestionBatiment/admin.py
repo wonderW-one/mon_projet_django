@@ -4,16 +4,22 @@ from .models import Client, Niveau, TypeBureau, Batiment, Bureau, Paiement, Rese
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'user__id', 'get_first_name', 'get_last_name', 'telephone',
+        'id', 'get_user_id', 'get_first_name', 'get_last_name', 'telephone',
         'type_piece_identite', 'numero_piece_identite', 'nationalite', 'profession',
         'date_naissance', 'lieu_naissance', 'created_at'
     )
+    # ...
+
+
     search_fields = (
         'user__first_name', 'user__last_name', 'user__username',
         'telephone', 'numero_piece_identite', 'nationalite', 'profession'
     )
     list_filter = ('created_at', 'type_piece_identite', 'nationalite')
 
+    def get_user_id(self, obj):
+        return obj.user.id
+    get_user_id.short_description = 'ID Utilisateur'
     def get_first_name(self, obj):
         return obj.user.first_name
     get_first_name.short_description = 'Prénom'

@@ -32,7 +32,7 @@ class Client(BaseModel):  # Hérite désormais de BaseModel
         choices=UserRole.choices,
         default=UserRole.CLIENT
     )
-    
+
     telephone = PhoneNumberField(region='CM', blank=True, null=True)
     addresse = models.CharField(max_length=255, blank=True, null=True)
     date_naissance = models.DateField(blank=True, null=True)
@@ -56,8 +56,8 @@ class Client(BaseModel):  # Hérite désormais de BaseModel
 
     def __str__(self):
         return self.user.get_full_name() or self.user.username
-       
-    
+
+
 class Batiment(BaseModel):  # Hérite désormais de BaseModel
     id = models.AutoField(primary_key=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -75,7 +75,7 @@ class Batiment(BaseModel):  # Hérite désormais de BaseModel
     proprietaire_type_piece = models.CharField(max_length=20, choices=Client.TYPE_PIECE_CHOICES, blank=True, null=True)
     proprietaire_numero_piece = models.CharField(max_length=50, blank=True, null=True)
 
-    
+
     def __str__(self):
         return self.nom
 
@@ -124,8 +124,8 @@ class Niveau(BaseModel):  # Hérite désormais de BaseModel
             models.Q(contrat__reservation__bureau__niveau=self) |
             models.Q(contrat__bureau__niveau=self)
         ))
-    
-    
+
+
 class TypeBureau(BaseModel):  # Hérite désormais de BaseModel
     id = models.AutoField(primary_key=True)
     nom = models.CharField(max_length=50)
@@ -134,7 +134,7 @@ class TypeBureau(BaseModel):  # Hérite désormais de BaseModel
 
     def __str__(self):
         return self.nom
-    
+
 
 class Bureau(BaseModel):  # Hérite désormais de BaseModel
     class BureauStatus(models.TextChoices):
@@ -153,7 +153,7 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     statut = models.CharField(max_length=20, choices=BureauStatus.choices, default=BureauStatus.DISPONIBLE)
-    
+
 
     class Meta:
         constraints = [
@@ -162,7 +162,7 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
 
     def __str__(self):
         return f"Bureau {self.numero} ({self.type.nom if self.type else 'Sans type'})"
-    
+
     def clean(self):
         super().clean()
         if self.unite is not None and self.unite < Decimal('0.00'):
@@ -182,7 +182,7 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
         self.prix = self.prix.quantize(Decimal('0.01'))
         self.full_clean()
         super().save(*args, **kwargs)
-    
+
     @property
     def date_disponibilite_prevue(self):
         """
@@ -191,30 +191,30 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
         """
         if self.statut == self.BureauStatus.DISPONIBLE:
             return None
-        
+
         aujourdhui = timezone.now().date()
-        
+
         # On cherche la réservation active en cours sur ce bureau
         reservation_en_cours = self.reservations.filter(
             is_active=True,
             date_debut__lte=aujourdhui,
             date_fin__gte=aujourdhui
         ).order_by('-date_fin').first()
-        
+
         if reservation_en_cours and reservation_en_cours.date_fin:
             # Le lendemain de la fin de la réservation, le bureau est libre
             return reservation_en_cours.date_fin + timedelta(days=1)
-            
+
         # Si pas de réservation mais statut occupé (ex: contrat direct)
         contrat_en_cours = self.contrats_directs.filter(
             is_active=True,
             date_debut__lte=aujourdhui,
             date_fin__gte=aujourdhui
         ).order_by('-date_fin').first()
-        
+
         if contrat_en_cours and contrat_en_cours.date_fin:
             return contrat_en_cours.date_fin + timedelta(days=1)
-            
+
         return None
 
 
@@ -230,10 +230,10 @@ class Reservation(BaseModel):  # Hérite désormais de BaseModel
     created_at = models.DateTimeField(auto_now_add=True)
     # SÉCURITÉ : Bloquer la suppression du client pour préserver les réservations passées
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='reservations')
-    
+
     def __str__(self):
         return f"Réservation du {self.date_debut} au {self.date_fin} - {self.client.user.first_name} {self.client.user.last_name}"
-    
+
     @property
     def statut_temporel(self):
         aujourdhui = timezone.now().date()
@@ -249,13 +249,13 @@ class Reservation(BaseModel):  # Hérite désormais de BaseModel
         super().clean()
         if self.date_debut and self.date_fin and self.date_fin < self.date_debut:
             raise ValidationError ({'date_fin': _("La date de fin doit être postérieure à la date de début.")})
-        
+
         if self.date_debut and self.date_fin and self.bureau:
             chevauchements = Reservation.objects.filter(
                 bureau=self.bureau,
-                is_active=True,                  
-                date_debut__lt=self.date_fin,    
-                date_fin__gt=self.date_debut     
+                is_active=True,
+                date_debut__lt=self.date_fin,
+                date_fin__gt=self.date_debut
             )
             if self.pk:
                 chevauchements = chevauchements.exclude(pk=self.pk)
@@ -265,7 +265,7 @@ class Reservation(BaseModel):  # Hérite désormais de BaseModel
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
-         
+
 
 class Contrat(BaseModel):
     class ContratStatus(models.TextChoices):
@@ -426,13 +426,13 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
     id = models.AutoField(primary_key=True)
     montant = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateTimeField(auto_now_add=True)
-    
+
     mois_paye = models.IntegerField(choices=CHOIX_MOIS, null=True, blank=False)
     annee_paye = models.IntegerField(default=2026, null=True, blank=False)
-    
+
     mode = models.CharField(max_length=20, choices=[('CASH', 'Espèces'), ('CARD', 'Carte bancaire'), ('TRANSFER', 'Virement bancaire')], default='CASH')
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='paiements_crees')
-    
+
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, related_name='paiements', null=True, blank=True)
     # SÉCURITÉ : Un flux d'argent encaissé implique une interdiction stricte de supprimer le client
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='paiements')
@@ -441,7 +441,7 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
     statut = models.CharField(max_length=20, choices=PaiementStatus.choices, default=PaiementStatus.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         unique_together = ('contrat', 'mois_paye', 'annee_paye')
 
@@ -456,7 +456,7 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
 
         if self.contrat and self.contrat.statut_temporel == "EXPIRÉ":
             raise ValidationError({'contrat': _("Impossible d'enregistrer un paiement pour un contrat expiré.")})
-            
+
         if self.location and self.location.statut_temporel == "EXPIRÉ":
             raise ValidationError({'location': _("Impossible d'enregistrer un paiement pour une location expirée.")})
 
@@ -478,9 +478,9 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
             role_utilisateur = user_performing_action.client_profile.role
             if role_utilisateur in ['TRAVAILLEUR' , 'MANAGER'] and self.statut == 'PAID':
                 self.statut = self.PaiementStatus.PENDING_ADMIN
-        self.full_clean()  
+        self.full_clean()
         super().save(*args, **kwargs)
-        
+
     @property
     def loyer_mensuel_prevu_30_jours(self):
         bureau = None

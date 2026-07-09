@@ -4,13 +4,13 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from gestionBatiment.views import ClientViewSet, BatimentViewSet, NiveauViewSet,  TypeBureauViewSet, BureauViewSet, ContratViewSet, LocationViewSet, PaiementViewSet, ReservationViewSet
-from rest_framework_simplejwt.views import TokenRefreshView 
+from rest_framework_simplejwt.views import TokenRefreshView
 from gestionBatiment.auth_serializers import CustomTokenObtainPairView
 
 router = DefaultRouter()
 router.register(r'clients', ClientViewSet, basename='client')
 router.register(r'batiments', BatimentViewSet, basename='batiment')
-router.register(r'types-bureau', TypeBureauViewSet, basename='typebureau')  
+router.register(r'types-bureau', TypeBureauViewSet, basename='typebureau')
 router.register(r'niveaux', NiveauViewSet, basename='niveau')
 router.register(r'bureaux', BureauViewSet, basename='bureau')
 router.register(r'reservations', ReservationViewSet, basename='reservation')
