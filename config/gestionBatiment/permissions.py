@@ -268,6 +268,11 @@ class ReservationPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
+            if (
+                getattr(view, "action", None) == "convertir_contrat"
+                and request.method == "POST"
+            ):
+                return True
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
@@ -315,6 +320,12 @@ class ContratPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
+            action = getattr(view, "action", None)
+            if (
+                action in ("valider_contrat", "rejeter_contrat")
+                and request.method == "POST"
+            ):
+                return True
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:

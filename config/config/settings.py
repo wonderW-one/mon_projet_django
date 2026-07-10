@@ -29,9 +29,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# CORRECTION DÉPLOIEMENT : piloté par variable d'env, False par défaut (sécurité par défaut)
+DEBUG = config("DEBUG", default=False, cast=bool)
 
-ALLOWED_HOSTS = []
+# CORRECTION DÉPLOIEMENT : accepte les hôtes Render en plus du localhost de dev
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
 
 
 # Application definition
@@ -57,6 +59,9 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Parfaitement positionné en haut
     "django.middleware.security.SecurityMiddleware",
+    # AJOUT DÉPLOIEMENT : WhiteNoise juste après SecurityMiddleware pour servir
+    # les fichiers statiques (admin Django, DRF browsable API) sans serveur dédié
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -149,6 +154,11 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# AJOUT DÉPLOIEMENT : dossier où collectstatic rassemble tous les fichiers
+# statiques avant que WhiteNoise les serve en prod
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -168,10 +178,12 @@ SIMPLE_JWT = {
 
 # ==================== CONFIGURATION CORS (FRONTEND CONNECT) ====================
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:4200",
-    "http://127.0.0.1:4200",
-]
+# CORRECTION DÉPLOIEMENT : origines pilotées par variable d'env pour inclure
+# le domaine Render du frontend en prod, tout en gardant localhost en dev
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default="http://localhost:4200,http://127.0.0.1:4200",
+).split(",")
 
 # CORRECTION SÉCURITÉ : Autoriser explicitement l'en-tête d'authentification et de contenu
 CORS_ALLOW_HEADERS = [
