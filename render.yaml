@@ -4,17 +4,9 @@ databases:
     databaseName: gestionbatiment
     user: gestionbatiment_user
 
-services:
-  # --- Backend Django (API) ---
-  - type: web
-    name: django-backend
-    runtime: python
-    plan: free
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
-    startCommand: "gunicorn config.wsgi:application"
+envVarGroups:
+  - name: shared-config
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
@@ -22,8 +14,7 @@ services:
       - key: ALLOWED_HOSTS
         value: "django-backend.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://TON-FRONTEND.onrender.com"
-
+        value: "https://frontend-sxu7.onrender.com"
       - key: DB_NAME
         fromDatabase:
           name: django-db
@@ -44,13 +35,11 @@ services:
         fromDatabase:
           name: django-db
           property: port
-
       - key: CELERY_BROKER_URL
         fromService:
           type: redis
           name: django-redis
           property: connectionString
-
       - key: EMAIL_HOST
         sync: false
       - key: EMAIL_PORT
@@ -61,120 +50,49 @@ services:
         sync: false
       - key: EMAIL_HOST_PASSWORD
         sync: false
+
+services:
+  # --- Backend Django (API) ---
+  - type: web
+    name: django-backend
+    runtime: python
+    plan: free
+    rootDir: config
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    startCommand: "gunicorn config.wsgi:application"
+    envVarGroups:
+      - shared-config
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
 
   # --- Worker Celery (exécute les tâches, ex: envoyer_rappels_paiement) ---
   - type: worker
     name: celery-worker
     runtime: python
     plan: free
+    rootDir: config
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A config worker --loglevel=info"
+    envVarGroups:
+      - shared-config
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      - key: SECRET_KEY
-        sync: false
-      - key: DEBUG
-        value: "False"
-      - key: ALLOWED_HOSTS
-        value: "django-backend.onrender.com"
-      - key: CORS_ALLOWED_ORIGINS
-        value: "https://TON-FRONTEND.onrender.com"
-
-      - key: DB_NAME
-        fromDatabase:
-          name: django-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: django-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: django-db
-          property: password
-      - key: DB_HOST
-        fromDatabase:
-          name: django-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: django-db
-          property: port
-
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: django-redis
-          property: connectionString
-
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_PORT
-        sync: false
-      - key: EMAIL_USE_TLS
-        sync: false
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
 
   # --- Celery Beat (planifie les tâches périodiques, ex: rappels de paiement) ---
   - type: worker
     name: celery-beat
     runtime: python
     plan: free
+    rootDir: config
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    envVarGroups:
+      - shared-config
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
-      - key: SECRET_KEY
-        sync: false
-      - key: DEBUG
-        value: "False"
-      - key: ALLOWED_HOSTS
-        value: "django-backend.onrender.com"
-      - key: CORS_ALLOWED_ORIGINS
-        value: "https://https://frontend-sxu7.onrender.com"
-
-      - key: DB_NAME
-        fromDatabase:
-          name: django-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: django-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: django-db
-          property: password
-      - key: DB_HOST
-        fromDatabase:
-          name: django-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: django-db
-          property: port
-
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: django-redis
-          property: connectionString
-
-      - key: EMAIL_HOST
-        sync: false
-      - key: EMAIL_PORT
-        sync: false
-      - key: EMAIL_USE_TLS
-        sync: false
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
 
   # --- Redis (broker Celery) ---
   - type: redis
