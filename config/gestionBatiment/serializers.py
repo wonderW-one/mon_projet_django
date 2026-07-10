@@ -307,9 +307,9 @@ class ContratSerializer(serializers.ModelSerializer):
             profile = getattr(request.user, "client_profile", None)
             if profile and profile.role == "CLIENT":
                 self.fields["document_contrat_signe"].read_only = True
-                self.fields["date_debut"].read_only = (
-                    True  # AJOUT : fixée à la validation
-                )
+                self.fields[
+                    "date_debut"
+                ].read_only = True  # AJOUT : fixée à la validation
                 self.fields["client"].read_only = True  # AJOUT : forcé par la vue
 
     class Meta:

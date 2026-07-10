@@ -12,6 +12,7 @@ Pré-requis settings.py (settings de test) :
 immédiatement dans le process de test, sans passer par Redis ni un worker
 séparé.
 """
+
 from datetime import date, timedelta
 
 from django.contrib.auth.models import User

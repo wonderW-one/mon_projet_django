@@ -9,6 +9,7 @@ logique métier (filtrage des contrats, contenu de l'email, cas limites).
 Pré-requis settings.py (settings de test) :
     EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 """
+
 from datetime import date, timedelta
 
 from django.contrib.auth.models import User
