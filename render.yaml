@@ -35,9 +35,8 @@ services:
     rootDir: config
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate"
     startCommand: "gunicorn config.wsgi:application"
-    envVarGroups:
-      - shared-config
     envVars:
+      - fromGroup: shared-config
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: DB_NAME
@@ -74,9 +73,8 @@ services:
     rootDir: config
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A config worker --loglevel=info"
-    envVarGroups:
-      - shared-config
     envVars:
+      - fromGroup: shared-config
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: DB_NAME
@@ -113,9 +111,8 @@ services:
     rootDir: config
     buildCommand: "pip install -r requirements.txt"
     startCommand: "celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
-    envVarGroups:
-      - shared-config
     envVars:
+      - fromGroup: shared-config
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: DB_NAME
