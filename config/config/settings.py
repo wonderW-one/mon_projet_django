@@ -182,7 +182,7 @@ SIMPLE_JWT = {
 # le domaine Render du frontend en prod, tout en gardant localhost en dev
 CORS_ALLOWED_ORIGINS = config(
     "CORS_ALLOWED_ORIGINS",
-    default="http://localhost:4200,http://127.0.0.1:4200",
+    default="https://frontend-sxu7.onrender.com",
 ).split(",")
 
 # CORRECTION SÉCURITÉ : Autoriser explicitement l'en-tête d'authentification et de contenu
