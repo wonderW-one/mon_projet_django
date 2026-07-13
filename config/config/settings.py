@@ -50,7 +50,7 @@ INSTALLED_APPS = [
     "rest_framework",  # CORRECTION : Placé AVANT son extension SimpleJWT
     "rest_framework_simplejwt",
     "django_filters",
-    "django_celery_beat",
+    # "django_celery_beat",
     "phonenumbers",
     # Applications locales
     "gestionBatiment",
@@ -205,13 +205,13 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
-CELERY_TIMEZONE = TIME_ZONE
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+# CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+# CELERY_RESULT_BACKEND = config("CELERY_BROKER_URL", default="redis://localhost:6379/0")
+# CELERY_TIMEZONE = TIME_ZONE
+# CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Pour exécuter les tâches Celery de façon synchrone pendant les tests
 if RUNNING_TESTS:
-    CELERY_TASK_ALWAYS_EAGER = True
-    CELERY_TASK_EAGER_PROPAGATES = True
+    # CELERY_TASK_ALWAYS_EAGER = True
+    # CELERY_TASK_EAGER_PROPAGATES = True
     EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

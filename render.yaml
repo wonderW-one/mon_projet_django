@@ -14,7 +14,7 @@ envVarGroups:
       - key: ALLOWED_HOSTS
         value: "django-backend.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://frontend-sxu7.onrender.com"
+        value: "https://django-backend-yfqd.onrender.com"
       - key: EMAIL_HOST
         sync: false
       - key: EMAIL_PORT
@@ -59,58 +59,96 @@ services:
         fromDatabase:
           name: django-db
           property: port
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: django-redis
-          property: connectionString
+      # - key: CELERY_BROKER_URL
+      #   fromService:
+      #     type: redis
+      #     name: django-redis
+      #     property: connectionString
 
   # --- Worker Celery (exécute les tâches, ex: envoyer_rappels_paiement) ---
-  - type: worker
-    name: celery-worker
-    runtime: python
-    plan: free
-    rootDir: config
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A config worker --loglevel=info"
-    envVars:
-      - fromGroup: shared-config
-      - key: PYTHON_VERSION
-        value: "3.11.9"
-      - key: DB_NAME
-        fromDatabase:
-          name: django-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: django-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: django-db
-          property: password
-      - key: DB_HOST
-        fromDatabase:
-          name: django-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: django-db
-          property: port
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: django-redis
-          property: connectionString
+  # - type: worker
+  #   name: celery-worker
+  #   runtime: python
+  #   plan: free
+  #   rootDir: config
+  #   buildCommand: "pip install -r requirements.txt"
+  #   startCommand: "celery -A config worker --loglevel=info"
+  #   envVars:
+  #     - fromGroup: shared-config
+  #     - key: PYTHON_VERSION
+  #       value: "3.11.9"
+  #     - key: DB_NAME
+  #       fromDatabase:
+  #         name: django-db
+  #         property: database
+  #     - key: DB_USER
+  #       fromDatabase:
+  #         name: django-db
+  #         property: user
+  #     - key: DB_PASSWORD
+  #       fromDatabase:
+  #         name: django-db
+  #         property: password
+  #     - key: DB_HOST
+  #       fromDatabase:
+  #         name: django-db
+  #         property: host
+  #     - key: DB_PORT
+  #       fromDatabase:
+  #         name: django-db
+  #         property: port
+  #     - key: CELERY_BROKER_URL
+  #       fromService:
+  #         type: redis
+  #         name: django-redis
+  #         property: connectionString
 
-  # --- Celery Beat (planifie les tâches périodiques, ex: rappels de paiement) ---
-  - type: worker
-    name: celery-beat
+  # # --- Celery Beat (planifie les tâches périodiques, ex: rappels de paiement) ---
+  # - type: worker
+  #   name: celery-beat
+  #   runtime: python
+  #   plan: free
+  #   rootDir: config
+  #   buildCommand: "pip install -r requirements.txt"
+  #   startCommand: "celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+  #   envVars:
+  #     - fromGroup: shared-config
+  #     - key: PYTHON_VERSION
+  #       value: "3.11.9"
+  #     - key: DB_NAME
+  #       fromDatabase:
+  #         name: django-db
+  #         property: database
+  #     - key: DB_USER
+  #       fromDatabase:
+  #         name: django-db
+  #         property: user
+  #     - key: DB_PASSWORD
+  #       fromDatabase:
+  #         name: django-db
+  #         property: password
+  #     - key: DB_HOST
+  #       fromDatabase:
+  #         name: django-db
+  #         property: host
+  #     - key: DB_PORT
+  #       fromDatabase:
+  #         name: django-db
+  #         property: port
+  #     - key: CELERY_BROKER_URL
+  #       fromService:
+  #         type: redis
+  #         name: django-redis
+  #         property: connectionString
+  # --- Cron Job (remplace Celery Beat sur le plan gratuit) ---
+  - type: cron
+    name: rappels-paiement-cron
     runtime: python
     plan: free
     rootDir: config
+    schedule: "0 7 * * *"  # tous les jours a 7h00 UTC
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    startCommand: "python manage.py envoyer_rappels_paiement"
     envVars:
       - fromGroup: shared-config
       - key: PYTHON_VERSION
@@ -135,14 +173,9 @@ services:
         fromDatabase:
           name: django-db
           property: port
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: django-redis
-          property: connectionString
 
   # --- Redis (broker Celery) ---
-  - type: redis
-    name: django-redis
-    plan: free
-    ipAllowList: []
+  # - type: redis
+  #   name: django-redis
+  #   plan: free
+  #   ipAllowList: []

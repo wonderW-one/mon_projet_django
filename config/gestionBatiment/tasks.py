@@ -1,7 +1,6 @@
 # gestionBatiment/tasks.py
 from datetime import timedelta
 
-from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
@@ -11,7 +10,6 @@ from .models import Contrat
 JOURS_AVANT_RAPPEL = 5
 
 
-@shared_task
 def envoyer_rappels_paiement():
     aujourdhui = timezone.now().date()
     date_cible = aujourdhui + timedelta(days=JOURS_AVANT_RAPPEL)
