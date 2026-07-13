@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     # Applications locales
     "gestionBatiment",
 ]
+INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Parfaitement positionné en haut
