@@ -12,9 +12,9 @@ envVarGroups:
       - key: DEBUG
         value: "False"
       - key: ALLOWED_HOSTS
-        value: "django-backend.onrender.com"
+        value: "django-backend-yfqd.onrender.com"
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://django-backend-yfqd.onrender.com"
+        value: "https://frontend-sxu7.onrender.com"
       - key: EMAIL_HOST
         sync: false
       - key: EMAIL_PORT
