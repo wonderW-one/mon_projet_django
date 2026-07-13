@@ -55,7 +55,7 @@ INSTALLED_APPS = [
     # Applications locales
     "gestionBatiment",
 ]
-INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
+# INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Parfaitement positionné en haut
@@ -164,12 +164,12 @@ STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
-CLOUDINARY_STORAGE = {
-    "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME"),
-    "API_KEY": config("CLOUDINARY_API_KEY"),
-    "API_SECRET": config("CLOUDINARY_API_SECRET"),
-}
+# DEFAULT_FILE_STORAGE = "cloudinary_storage.storage.MediaCloudinaryStorage"
+# CLOUDINARY_STORAGE = {
+#     "CLOUD_NAME": config("CLOUDINARY_CLOUD_NAME"),
+#     "API_KEY": config("CLOUDINARY_API_KEY"),
+#     "API_SECRET": config("CLOUDINARY_API_SECRET"),
+# }
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
