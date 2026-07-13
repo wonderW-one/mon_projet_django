@@ -141,38 +141,38 @@ services:
   #         name: django-redis
   #         property: connectionString
   # --- Cron Job (remplace Celery Beat sur le plan gratuit) ---
-  - type: cron
-    name: rappels-paiement-cron
-    runtime: python
-    plan: free
-    rootDir: config
-    schedule: "0 7 * * *"  # tous les jours a 7h00 UTC
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python manage.py envoyer_rappels_paiement"
-    envVars:
-      - fromGroup: shared-config
-      - key: PYTHON_VERSION
-        value: "3.11.9"
-      - key: DB_NAME
-        fromDatabase:
-          name: django-db
-          property: database
-      - key: DB_USER
-        fromDatabase:
-          name: django-db
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: django-db
-          property: password
-      - key: DB_HOST
-        fromDatabase:
-          name: django-db
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: django-db
-          property: port
+  # - type: cron
+  #   name: rappels-paiement-cron
+  #   runtime: python
+  #   plan: free
+  #   rootDir: config
+  #   schedule: "0 7 * * *"  # tous les jours a 7h00 UTC
+  #   buildCommand: "pip install -r requirements.txt"
+  #   startCommand: "python manage.py envoyer_rappels_paiement"
+  #   envVars:
+  #     - fromGroup: shared-config
+  #     - key: PYTHON_VERSION
+  #       value: "3.11.9"
+  #     - key: DB_NAME
+  #       fromDatabase:
+  #         name: django-db
+  #         property: database
+  #     - key: DB_USER
+  #       fromDatabase:
+  #         name: django-db
+  #         property: user
+  #     - key: DB_PASSWORD
+  #       fromDatabase:
+  #         name: django-db
+  #         property: password
+  #     - key: DB_HOST
+  #       fromDatabase:
+  #         name: django-db
+  #         property: host
+  #     - key: DB_PORT
+  #       fromDatabase:
+  #         name: django-db
+  #         property: port
 
   # --- Redis (broker Celery) ---
   # - type: redis
