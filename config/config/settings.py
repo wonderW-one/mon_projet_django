@@ -57,6 +57,35 @@ INSTALLED_APPS = [
 ]
 # INSTALLED_APPS += ["cloudinary_storage", "cloudinary"]
 
+
+# ==================== STOCKAGE MÉDIA (Supabase Storage, S3-compatible) ====================
+
+INSTALLED_APPS += ["storages"]
+
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+AWS_ACCESS_KEY_ID = config("SUPABASE_S3_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = config("SUPABASE_S3_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = config("SUPABASE_S3_BUCKET_NAME", default="media")
+AWS_S3_ENDPOINT_URL = config(
+    "SUPABASE_S3_ENDPOINT_URL"
+)  # https://<project-ref>.supabase.co/storage/v1/s3
+AWS_S3_REGION_NAME = config("SUPABASE_S3_REGION", default="eu-central-1")
+
+# Supabase exige le "path-style" (bucket dans le chemin, pas en sous-domaine)
+AWS_S3_ADDRESSING_STYLE = "path"
+AWS_DEFAULT_ACL = None
+AWS_S3_FILE_OVERWRITE = False
+AWS_QUERYSTRING_AUTH = False
+
+# CORRECTION : sert les fichiers via l'API publique Supabase (plus rapide, sans
+# passer par le protocole S3 pour chaque lecture) plutôt que via l'endpoint S3
+AWS_S3_CUSTOM_DOMAIN = (
+    f"{config('SUPABASE_PROJECT_REF')}.supabase.co/storage/v1/object/public/"
+    f"{AWS_STORAGE_BUCKET_NAME}"
+)
+
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",  # Parfaitement positionné en haut
     "django.middleware.security.SecurityMiddleware",

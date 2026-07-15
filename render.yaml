@@ -61,6 +61,18 @@ services:
         fromDatabase:
           name: django-db
           property: port
+      - key: SUPABASE_S3_ACCESS_KEY_ID
+        sync: false
+      - key: SUPABASE_S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: SUPABASE_S3_BUCKET_NAME
+        value: "media"
+      - key: SUPABASE_S3_ENDPOINT_URL
+        sync: false
+      - key: SUPABASE_S3_REGION
+        sync: false
+      - key: SUPABASE_PROJECT_REF
+        sync: false
       # - key: CELERY_BROKER_URL
       #   fromService:
       #     type: redis

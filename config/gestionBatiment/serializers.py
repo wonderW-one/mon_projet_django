@@ -109,6 +109,9 @@ class ClientSerializer(serializers.ModelSerializer):
             email = validated_data.pop("email", "")
             first_name = validated_data.pop("first_name", "")
             last_name = validated_data.pop("last_name", "")
+            # SÉCURITÉ : le rôle est toujours forcé à CLIENT lors de l'inscription publique,
+            # quoi que le payload contienne (évite aussi un crash "role" en double via **validated_data)
+            validated_data.pop("role", None)
 
             user, created = User.objects.get_or_create(
                 username=username,
@@ -138,6 +141,23 @@ class ClientSerializer(serializers.ModelSerializer):
                 user_data[field] = validated_data.pop(field)
 
         password = validated_data.pop("password", None)
+
+        # SÉCURITÉ : seul un ADMIN peut modifier le rôle d'un profil (le sien ou celui d'un autre).
+        if "role" in validated_data:
+            request = self.context.get("request")
+            est_admin = bool(
+                request
+                and request.user
+                and (
+                    request.user.is_superuser
+                    or getattr(
+                        getattr(request.user, "client_profile", None), "role", None
+                    )
+                    == "ADMIN"
+                )
+            )
+            if not est_admin:
+                validated_data.pop("role")
 
         with transaction.atomic():
             if user_data or password:

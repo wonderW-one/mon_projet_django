@@ -206,7 +206,7 @@ class ClientViewSet(BaseModelViewSet):
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=False, methods=["get"], url_path="mon-profil")
+    @action(detail=False, methods=["get", "patch"], url_path="mon-profil")
     def mon_profil(self, request):
         profile = self.get_client_profile()
         if profile is None or not profile.is_active:
@@ -215,7 +215,16 @@ class ClientViewSet(BaseModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = self.get_serializer(profile)
+        if request.method == "GET":
+            serializer = self.get_serializer(profile)
+            data = serializer.data
+            data["has_profile"] = True
+            return Response(data, status=status.HTTP_200_OK)
+
+        # PATCH : mise à jour partielle du profil connecté
+        serializer = self.get_serializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         data = serializer.data
         data["has_profile"] = True
         return Response(data, status=status.HTTP_200_OK)
