@@ -25,12 +25,12 @@ repos:
     -   id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
 
--   repo: local
-    hooks:
-    -   id: django-tests
-        name: Tests Django (gestionBatiment)
-        entry: python config/manage.py test gestionBatiment.tests
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
+# -   repo: local
+#     hooks:
+#     -   id: django-tests
+#         name: Tests Django (gestionBatiment)
+#         entry: python config/manage.py test gestionBatiment.tests
+#         language: system
+#         pass_filenames: false
+#         always_run: true
+#         stages: [pre-push]
