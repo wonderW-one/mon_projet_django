@@ -268,17 +268,27 @@ class ReservationPermission(BaseRolePermission):
             return True
 
         if role in WORKER_ROLES:
-            if (
-                getattr(view, "action", None) == "convertir_contrat"
-                and request.method == "POST"
-            ):
+            # 🔴 BUG CORRIGÉ : seule l'action "convertir_contrat" était autorisée en
+            # POST pour un TRAVAILLEUR/MANAGER. Les actions "valider" et "rejeter"
+            # (approbation d'une réservation) étaient donc systématiquement
+            # refusées (403) pour ce rôle.
+            if getattr(view, "action", None) in (
+                "convertir_contrat",
+                "valider",
+                "rejeter",
+            ) and request.method == "POST":
                 return True
             return request.method in SAFE_METHODS
 
         if role in CLIENT_ROLES:
             user_client = getattr(request.user, "client_profile", None)
             if user_client and obj.client.id == user_client.id:
-                if view.action == "convertir_contrat" and request.method == "POST":
+                # 🔴 BUG CORRIGÉ : l'action "annuler" (POST) n'était pas dans la
+                # liste des actions autorisées pour le client propriétaire de la
+                # réservation. Résultat : 403 Forbidden sur
+                # /reservations/{id}/annuler/ alors que le client annule bien SA
+                # PROPRE réservation. On l'ajoute à côté de "convertir_contrat".
+                if view.action in ("convertir_contrat", "annuler") and request.method == "POST":
                     return True
                 return request.method in SAFE_METHODS
 

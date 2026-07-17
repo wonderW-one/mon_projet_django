@@ -3,6 +3,7 @@ import logging
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
+from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -339,12 +340,58 @@ class ReservationViewSet(BaseModelViewSet):
 
     def perform_create(self, serializer):
         profile = self.get_client_profile()
+        # ✅ CORRIGÉ : on transmet systématiquement "user" au serializer/modèle pour
+        # que Reservation.save() puisse déterminer si l'auteur est un CLIENT et,
+        # le cas échéant, forcer le statut EN_ATTENTE (voir models.py).
         if profile and self.get_user_role() in CLIENT_ROLES:
-            reservation = serializer.save(client=profile)
+            reservation = serializer.save(client=profile, user=self.request.user)
         else:
-            reservation = serializer.save()
+            reservation = serializer.save(user=self.request.user)
+
+        # ✅ CHANGEMENT DE RÈGLE MÉTIER : une réservation ne rend le bureau
+        # "OCCUPE" que si elle démarre aujourd'hui (ou avant). Une réservation
+        # pour une PÉRIODE FUTURE (ex: bureau actuellement occupé mais réservé
+        # pour après la fin de la location en cours) ne doit pas bloquer le
+        # bureau dès aujourd'hui — sinon la location directe immédiate d'un
+        # bureau encore physiquement libre serait injustement refusée.
+        if (
+            reservation.statut == Reservation.ReservationStatus.VALIDEE
+            and reservation.date_debut
+            and reservation.date_debut <= timezone.now().date()
+        ):
+            reservation.bureau.statut = Bureau.BureauStatus.OCCUPE
+            reservation.bureau.save()
+
+    @action(detail=True, methods=["post"], url_path="valider")
+    def valider(self, request, pk=None):
+        """Approuve une réservation EN_ATTENTE soumise par un client (ADMIN/TRAVAILLEUR/MANAGER uniquement)."""
+        reservation = self.get_object()
+
+        if reservation.statut == Reservation.ReservationStatus.VALIDEE:
+            return Response(
+                {"detail": "Cette réservation est déjà validée."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reservation.statut = Reservation.ReservationStatus.VALIDEE
+        reservation.save(user=request.user)
+
         reservation.bureau.statut = Bureau.BureauStatus.OCCUPE
         reservation.bureau.save()
+
+        serializer = self.get_serializer(reservation)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="rejeter")
+    def rejeter(self, request, pk=None):
+        """Rejette une réservation EN_ATTENTE soumise par un client (ADMIN/TRAVAILLEUR/MANAGER uniquement)."""
+        reservation = self.get_object()
+        reservation.statut = Reservation.ReservationStatus.REJETEE
+        reservation.is_active = False
+        reservation.save(user=request.user)
+        return Response(
+            {"detail": "Demande de réservation rejetée."}, status=status.HTTP_200_OK
+        )
 
     @action(detail=True, methods=["post"], url_path="annuler")
     def annuler(self, request, pk=None):
@@ -371,27 +418,56 @@ class ReservationViewSet(BaseModelViewSet):
     @action(detail=True, methods=["post"], url_path="convertir-contrat")
     def convertir_contrat(self, request, pk=None):
         reservation = self.get_object()
+
+        # ✅ AJOUT : impossible de convertir une réservation qui n'a pas encore été
+        # validée par un ADMIN/TRAVAILLEUR/MANAGER.
+        if reservation.statut != Reservation.ReservationStatus.VALIDEE:
+            return Response(
+                {
+                    "detail": "Cette réservation doit d'abord être validée avant de pouvoir être convertie en contrat."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if hasattr(reservation, "contrat") and reservation.contrat:
             return Response(
                 {"detail": "Cette réservation a déjà un contrat associé."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # 🔴 BUG CORRIGÉ : le contrat créé ici héritait du statut par défaut du
+        # modèle (ContratStatus.VALIDE), ce qui rendait la location active
+        # IMMÉDIATEMENT, sans la moindre autorisation d'un ADMIN/TRAVAILLEUR/
+        # MANAGER — y compris quand c'est le CLIENT lui-même qui déclenche la
+        # conversion depuis sa réservation. Comme les réservations ne sont plus
+        # bloquées par une validation (voir Reservation.save()), il est
+        # indispensable que le CONTRAT, lui, reste bloqué EN_ATTENTE tant qu'un
+        # responsable ne l'a pas explicitement validé via /valider-contrat/.
         contrat = Contrat(
             reservation=reservation,
             client=reservation.client,
-            date_debut=reservation.date_debut,
+            date_debut=None,  # sera fixée le jour de la validation, comme pour une demande directe
             date_fin=reservation.date_fin,
+            statut=Contrat.ContratStatus.EN_ATTENTE,
         )
         contrat.save(user=request.user)
 
-        bureau = contrat.bureau_effectif
-        if bureau:
-            bureau.statut = Bureau.BureauStatus.OCCUPE
-            bureau.save()
+        # Le bureau reste dans son état actuel (déjà OCCUPE depuis la réservation
+        # confirmée) : on ne le "sur-occupe" pas ici. Il ne sera (re)confirmé
+        # OCCUPE qu'au moment de la validation du contrat par un responsable.
 
         serializer = ContratSerializer(contrat, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                **serializer.data,
+                "detail": (
+                    "Demande de contrat créée à partir de la réservation. "
+                    "Elle doit être validée par un administrateur ou un travailleur "
+                    "avant de devenir active."
+                ),
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ContratViewSet(BaseModelViewSet):
@@ -488,7 +564,20 @@ class PaiementViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
-        base_qs = Paiement.objects.filter(is_active=True)
+        # 🔴 BUG CORRIGÉ : l'ancienne version chaînait
+        #   .exclude(contrat__isnull=False).exclude(contrat__statut__in=[...])
+        # Le premier .exclude() réduisait déjà le queryset aux paiements SANS
+        # contrat (contrat__isnull=True) ; le second .exclude() ne changeait
+        # plus rien puisqu'il n'y avait déjà plus aucun contrat à filtrer. Le
+        # OR final avec un queryset identique ne changeait rien non plus.
+        # Résultat : AUCUN paiement lié à un contrat (même VALIDÉ) n'était
+        # jamais renvoyé — la liste des paiements semblait vide côté frontend
+        # dès qu'un paiement était rattaché à un contrat.
+        # ✅ Version correcte : on garde un paiement s'il n'a aucun contrat,
+        # OU si son contrat est VALIDE (jamais EN_ATTENTE / REJETE).
+        base_qs = Paiement.objects.filter(is_active=True).filter(
+            Q(contrat__isnull=True) | Q(contrat__statut=Contrat.ContratStatus.VALIDE)
+        )
 
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return base_qs
@@ -503,6 +592,10 @@ class PaiementViewSet(BaseModelViewSet):
     @action(detail=True, methods=["post"], url_path="valider-paiement")
     def valider_paiement(self, request, pk=None):
         paiement = self.get_object()
+        # 🔴 BUG CORRIGÉ (500 Internal Server Error) : l'énumération PaiementStatus
+        # définit le membre `COMPLETED = "PAID"`, il n'existe pas d'attribut
+        # `PaiementStatus.PAID`. Utiliser `.PAID` levait une AttributeError et
+        # provoquait un crash 500 à chaque validation de paiement.
         paiement.statut = Paiement.PaiementStatus.COMPLETED
         paiement.save(user=request.user)
         # --- LOGIQUE D'ENVOI D'E-MAIL AU CLIENT ---

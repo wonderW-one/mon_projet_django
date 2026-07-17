@@ -267,7 +267,20 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
 
 
 class Reservation(BaseModel):  # Hérite désormais de BaseModel
+    class ReservationStatus(models.TextChoices):
+        EN_ATTENTE = "EN_ATTENTE", _("En attente de validation")
+        VALIDEE = "VALIDEE", _("Validée")
+        REJETEE = "REJETEE", _("Rejetée")
+
     id = models.AutoField(primary_key=True)
+    # ✅ AJOUT : workflow d'approbation. Par défaut VALIDEE (réservation créée par un
+    # ADMIN/TRAVAILLEUR/MANAGER = confiance immédiate). Le save() ci-dessous force
+    # EN_ATTENTE quand c'est un CLIENT qui crée la réservation.
+    statut = models.CharField(
+        max_length=20,
+        choices=ReservationStatus.choices,
+        default=ReservationStatus.VALIDEE,
+    )
     date_debut = models.DateField(null=True, blank=True)
     date_fin = models.DateField(null=True, blank=True)
     # SÉCURITÉ : Bloquer la suppression d'un bureau s'il y a un historique de réservations
@@ -310,10 +323,17 @@ class Reservation(BaseModel):  # Hérite désormais de BaseModel
                 }
             )
 
+        # ✅ CHANGEMENT DE RÈGLE MÉTIER : un bureau OCCUPE reste réservable pour une
+        # période future, tant que les dates demandées ne chevauchent ni une
+        # réservation VALIDEE existante, ni un contrat direct actif sur ce même
+        # bureau (Contrat.bureau, location directe sans réservation). Le blocage
+        # "bureau occupé" ne s'applique plus qu'à la LOCATION DIRECTE immédiate
+        # (voir Contrat.clean()), jamais à une réservation pour plus tard.
         if self.date_debut and self.date_fin and self.bureau:
             chevauchements = Reservation.objects.filter(
                 bureau=self.bureau,
                 is_active=True,
+                statut=self.ReservationStatus.VALIDEE,
                 date_debut__lt=self.date_fin,
                 date_fin__gt=self.date_debut,
             )
@@ -328,7 +348,44 @@ class Reservation(BaseModel):  # Hérite désormais de BaseModel
                     }
                 )
 
+            # 🔴 BUG CORRIGÉ : un bureau occupé via un CONTRAT DIRECT (location
+            # directe, sans réservation liée) n'était jamais vérifié ici — seule
+            # la table Reservation était consultée. Un client pouvait donc
+            # réserver des dates qui chevauchaient une location directe en cours.
+            chevauchements_contrat_direct = Contrat.objects.filter(
+                bureau=self.bureau,
+                is_active=True,
+                statut=Contrat.ContratStatus.VALIDE,
+                date_debut__lt=self.date_fin,
+                date_fin__gt=self.date_debut,
+            )
+            if chevauchements_contrat_direct.exists():
+                raise ValidationError(
+                    {
+                        "date_debut": _(
+                            "Ce bureau est occupé par une location directe en cours sur "
+                            "tout ou partie de ces dates."
+                        )
+                    }
+                )
+
     def save(self, *args, **kwargs):
+        user_performing_action = kwargs.pop("user", None)
+        if user_performing_action:
+            self._history_user = user_performing_action
+
+        # ✅ CHANGEMENT DE RÈGLE MÉTIER : les réservations ne passent plus par un
+        # workflow d'approbation. Qu'elle soit créée par un CLIENT ou par un
+        # ADMIN/TRAVAILLEUR/MANAGER, une réservation est désormais confirmée
+        # immédiatement (statut par défaut VALIDEE). Elle reste annulable à tout
+        # moment par le client (voir ReservationViewSet.annuler).
+        #
+        # ⚠️ En revanche, le CONTRAT qui découle d'une réservation (conversion en
+        # location active) continue lui d'exiger une validation explicite d'un
+        # ADMIN/TRAVAILLEUR/MANAGER — voir ReservationViewSet.convertir_contrat et
+        # Contrat.save(). On ne "débloque" donc que la réservation, jamais le
+        # contrat qui en découle.
+
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -660,6 +717,17 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
                 {
                     "montant": _(
                         "Le montant du paiement doit être strictement supérieur à 0."
+                    )
+                }
+            )
+
+        # ✅ AJOUT : impossible de créer/modifier un paiement tant que le contrat
+        # associé n'est pas VALIDE (approuvé par un ADMIN/TRAVAILLEUR/MANAGER).
+        if self.contrat and self.contrat.statut != Contrat.ContratStatus.VALIDE:
+            raise ValidationError(
+                {
+                    "contrat": _(
+                        "Impossible d'enregistrer un paiement : ce contrat n'a pas encore été approuvé."
                     )
                 }
             )
