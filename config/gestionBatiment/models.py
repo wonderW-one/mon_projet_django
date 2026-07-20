@@ -37,7 +37,7 @@ class Client(BaseModel):  # Hérite désormais de BaseModel
         max_length=15, choices=UserRole.choices, default=UserRole.CLIENT
     )
 
-    telephone = PhoneNumberField(region="CM", blank=True, null=True)
+    telephone = PhoneNumberField(region="BI", blank=True, null=True)
     addresse = models.CharField(max_length=255, blank=True, null=True)
     date_naissance = models.DateField(blank=True, null=True)
     lieu_naissance = models.CharField(max_length=100, blank=True, null=True)
@@ -75,7 +75,7 @@ class Batiment(BaseModel):  # Hérite désormais de BaseModel
     updated_at = models.DateTimeField(auto_now=True)
     proprietaire_nom = models.CharField(max_length=100, blank=True, null=True)
     proprietaire_prenom = models.CharField(max_length=100, blank=True, null=True)
-    proprietaire_telephone = PhoneNumberField(region="CM", blank=True, null=True)
+    proprietaire_telephone = PhoneNumberField(region="BI", blank=True, null=True)
     proprietaire_email = models.EmailField(max_length=254, blank=True, null=True)
     proprietaire_adresse = models.CharField(max_length=255, blank=True, null=True)
     proprietaire_type_piece = models.CharField(
