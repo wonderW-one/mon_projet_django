@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
@@ -64,6 +65,12 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         fields = [
+            # 🔴 BUG CORRIGÉ : 'id' (la clé primaire du profil Client) n'était pas
+            # exposé par ce serializer. Or admin-dashboard.ts (onChangerRoleClient)
+            # et api.ts (mettreAJourRoleClient) utilisent précisément client.id
+            # pour construire l'URL PATCH /clients/{id}/ — sans ce champ, client.id
+            # valait toujours "undefined" côté frontend et la requête échouait.
+            "id",
             "user_id",
             "user_detail",
             "username",
@@ -98,14 +105,17 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         with transaction.atomic():
+            # 🔴 BUG CORRIGÉ : quand views.py appelle serializer.save(user=request.user)
+            # (cas d'un utilisateur déjà authentifié), DRF injecte ce 'user' dans
+            # validated_data. Le code créait pourtant TOUJOURS un nouveau User via
+            # username/password puis faisait Client.objects.create(user=user, **validated_data)
+            # → 'user' se retrouvait passé deux fois, d'où le TypeError
+            # "got multiple values for keyword argument 'user'".
+            # On distingue maintenant explicitement les deux cas.
+            existing_user = validated_data.pop("user", None)
+
             username = validated_data.pop("username", None)
             password = validated_data.pop("password", None)
-            if not username or not password:
-                raise serializers.ValidationError(
-                    {
-                        "detail": "Les champs 'username' et 'password' sont obligatoires pour créer un profil."
-                    }
-                )
             email = validated_data.pop("email", "")
             first_name = validated_data.pop("first_name", "")
             last_name = validated_data.pop("last_name", "")
@@ -113,25 +123,38 @@ class ClientSerializer(serializers.ModelSerializer):
             # quoi que le payload contienne (évite aussi un crash "role" en double via **validated_data)
             validated_data.pop("role", None)
 
-            # ✅ CORRIGÉ (FAILLE DE SÉCURITÉ) : avant, si le username existait déjà,
-            # le code réutilisait silencieusement le compte existant et écrasait son
-            # mot de passe avec celui fourni dans la requête — n'importe qui pouvait
-            # ainsi prendre le contrôle d'un compte existant (y compris un ADMIN) en
-            # "s'inscrivant" avec son nom d'utilisateur. On rejette maintenant
-            # explicitement toute inscription sur un username déjà pris.
-            if User.objects.filter(username=username).exists():
-                raise serializers.ValidationError(
-                    {"username": "Ce nom d'utilisateur est déjà pris."}
-                )
+            if existing_user is not None:
+                # Cas : un utilisateur déjà authentifié complète/crée son profil client.
+                # On réutilise son compte User existant, on ne crée rien d'autre.
+                user = existing_user
+            else:
+                # Cas : inscription publique (anonyme) → un compte User est créé.
+                if not username or not password:
+                    raise serializers.ValidationError(
+                        {
+                            "detail": "Les champs 'username' et 'password' sont obligatoires pour créer un profil."
+                        }
+                    )
 
-            user = User.objects.create(
-                username=username,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-            )
-            user.set_password(password)
-            user.save()
+                # ✅ CORRIGÉ (FAILLE DE SÉCURITÉ) : avant, si le username existait déjà,
+                # le code réutilisait silencieusement le compte existant et écrasait son
+                # mot de passe avec celui fourni dans la requête — n'importe qui pouvait
+                # ainsi prendre le contrôle d'un compte existant (y compris un ADMIN) en
+                # "s'inscrivant" avec son nom d'utilisateur. On rejette maintenant
+                # explicitement toute inscription sur un username déjà pris.
+                if User.objects.filter(username=username).exists():
+                    raise serializers.ValidationError(
+                        {"username": "Ce nom d'utilisateur est déjà pris."}
+                    )
+
+                user = User.objects.create(
+                    username=username,
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+                user.set_password(password)
+                user.save()
 
             client = Client.objects.create(
                 user=user, role=Client.UserRole.CLIENT, **validated_data
@@ -271,12 +294,24 @@ class BureauSerializer(serializers.ModelSerializer):
 
     def get_batiment_detail(self, obj):
         if obj.batiment:
+            # 🟢 AJOUT : on inclut désormais les coordonnées du propriétaire du
+            # bâtiment. Elles servent à alimenter la section "Contact Us" côté
+            # client (modal) pour qu'il puisse joindre un responsable. Ces champs
+            # sont déjà en lecture seule ici (SerializerMethodField), donc aucun
+            # risque de modification côté client — uniquement de la lecture, déjà
+            # autorisée pour CLIENT via BureauPermission (SAFE_METHODS).
             return {
                 "id": obj.batiment.id,
                 "nom": obj.batiment.nom,
                 "adresse": obj.batiment.adresse,
                 "nombre_etages": obj.batiment.nombre_etages,
                 "date_construction": obj.batiment.date_construction,
+                "proprietaire_nom": obj.batiment.proprietaire_nom,
+                "proprietaire_prenom": obj.batiment.proprietaire_prenom,
+                "proprietaire_telephone": str(obj.batiment.proprietaire_telephone)
+                if obj.batiment.proprietaire_telephone
+                else None,
+                "proprietaire_email": obj.batiment.proprietaire_email,
             }
         return None
 
@@ -443,6 +478,36 @@ class ContratSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"bureau": "Ce bureau n'est pas disponible."}
             )
+
+        # 🟢 AJOUT : bloque toute date passée sur les contrats (idem réservations).
+        # Le champ "date_debut" est en lecture seule pour un CLIENT (voir __init__
+        # ci-dessus), donc ce contrôle vise surtout ADMIN/TRAVAILLEUR/MANAGER qui
+        # peuvent la préciser manuellement lors d'une location directe.
+        date_debut = attrs.get("date_debut") or (
+            self.instance.date_debut if self.instance else None
+        )
+        date_fin = attrs.get("date_fin") or (
+            self.instance.date_fin if self.instance else None
+        )
+        aujourdhui = timezone.localdate()
+
+        if "date_debut" in attrs and date_debut and date_debut < aujourdhui:
+            raise serializers.ValidationError(
+                {
+                    "date_debut": "La date de début ne peut pas être antérieure à aujourd'hui."
+                }
+            )
+
+        if "date_fin" in attrs and date_fin and date_fin < aujourdhui:
+            raise serializers.ValidationError(
+                {"date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."}
+            )
+
+        if date_debut and date_fin and date_fin < date_debut:
+            raise serializers.ValidationError(
+                {"date_fin": "La date de fin doit être postérieure ou égale à la date de début."}
+            )
+
         return attrs
 
     def get_locations(self, obj):
@@ -572,6 +637,42 @@ class ReservationSerializer(serializers.ModelSerializer):
                 "statut": obj.bureau.statut,
             }
         return None
+
+    # 🟢 AJOUT : bloque côté serveur toute réservation dont la date de début (ou
+    # de fin) est déjà passée. Le contrôle côté frontend (attribut HTML "min")
+    # peut être contourné (DevTools, appel direct à l'API) : cette validation
+    # est donc la protection réelle.
+    def validate(self, attrs):
+        date_debut = attrs.get("date_debut") or (
+            self.instance.date_debut if self.instance else None
+        )
+        date_fin = attrs.get("date_fin") or (
+            self.instance.date_fin if self.instance else None
+        )
+
+        aujourdhui = timezone.localdate()
+
+        # On ne vérifie "date_debut dans le passé" que si elle est fournie/modifiée
+        # dans la requête (à la création, ou si un ADMIN/TRAVAILLEUR la modifie
+        # explicitement) — on ne casse pas les réservations existantes déjà en cours.
+        if "date_debut" in attrs and date_debut and date_debut < aujourdhui:
+            raise serializers.ValidationError(
+                {
+                    "date_debut": "La date de début ne peut pas être antérieure à aujourd'hui."
+                }
+            )
+
+        if "date_fin" in attrs and date_fin and date_fin < aujourdhui:
+            raise serializers.ValidationError(
+                {"date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."}
+            )
+
+        if date_debut and date_fin and date_fin < date_debut:
+            raise serializers.ValidationError(
+                {"date_fin": "La date de fin doit être postérieure ou égale à la date de début."}
+            )
+
+        return attrs
 
     # ✅ AJOUT : nécessaire pour que le "user" transmis par la vue (perform_create)
     # atteigne bien Reservation.save(user=...) et déclenche la logique EN_ATTENTE.

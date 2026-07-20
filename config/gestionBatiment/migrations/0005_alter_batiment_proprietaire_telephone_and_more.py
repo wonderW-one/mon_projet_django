@@ -5,7 +5,6 @@ import phonenumber_field.modelfields
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("gestionBatiment", "0004_reservation_statut"),
     ]
