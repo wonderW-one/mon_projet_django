@@ -23,6 +23,7 @@ from .models import (
     Paiement,
     Reservation,
     TypeBureau,
+    synchroniser_bureaux_expires,
 )
 from .permissions import (
     ADMIN_ROLE,
@@ -303,7 +304,7 @@ class BureauViewSet(BaseModelViewSet):
 
     def get_queryset(self):
         role = self.get_user_role()
-
+        synchroniser_bureaux_expires()
         # Sécurité structurelle : On ne remonte que les bureaux non archivés (soft-deleted)
         base_qs = Bureau.objects.filter(is_active=True)
 
@@ -330,7 +331,7 @@ class ReservationViewSet(BaseModelViewSet):
         profile = self.get_client_profile()
         role = self.get_user_role()
         base_qs = Reservation.objects.filter(is_active=True)
-
+        synchroniser_bureaux_expires()
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return base_qs
         if role in CLIENT_ROLES and profile is not None:
@@ -478,7 +479,7 @@ class ContratViewSet(BaseModelViewSet):
         profile = self.get_client_profile()
         role = self.get_user_role()
         base_qs = Contrat.objects.filter(is_active=True)
-
+        synchroniser_bureaux_expires()
         if role == ADMIN_ROLE or role in WORKER_ROLES:
             return base_qs
         if role in CLIENT_ROLES and profile is not None:
@@ -564,17 +565,6 @@ class PaiementViewSet(BaseModelViewSet):
     def get_queryset(self):
         profile = self.get_client_profile()
         role = self.get_user_role()
-        # 🔴 BUG CORRIGÉ : l'ancienne version chaînait
-        #   .exclude(contrat__isnull=False).exclude(contrat__statut__in=[...])
-        # Le premier .exclude() réduisait déjà le queryset aux paiements SANS
-        # contrat (contrat__isnull=True) ; le second .exclude() ne changeait
-        # plus rien puisqu'il n'y avait déjà plus aucun contrat à filtrer. Le
-        # OR final avec un queryset identique ne changeait rien non plus.
-        # Résultat : AUCUN paiement lié à un contrat (même VALIDÉ) n'était
-        # jamais renvoyé — la liste des paiements semblait vide côté frontend
-        # dès qu'un paiement était rattaché à un contrat.
-        # ✅ Version correcte : on garde un paiement s'il n'a aucun contrat,
-        # OU si son contrat est VALIDE (jamais EN_ATTENTE / REJETE).
         base_qs = Paiement.objects.filter(is_active=True).filter(
             Q(contrat__isnull=True) | Q(contrat__statut=Contrat.ContratStatus.VALIDE)
         )
@@ -592,10 +582,6 @@ class PaiementViewSet(BaseModelViewSet):
     @action(detail=True, methods=["post"], url_path="valider-paiement")
     def valider_paiement(self, request, pk=None):
         paiement = self.get_object()
-        # 🔴 BUG CORRIGÉ (500 Internal Server Error) : l'énumération PaiementStatus
-        # définit le membre `COMPLETED = "PAID"`, il n'existe pas d'attribut
-        # `PaiementStatus.PAID`. Utiliser `.PAID` levait une AttributeError et
-        # provoquait un crash 500 à chaque validation de paiement.
         paiement.statut = Paiement.PaiementStatus.COMPLETED
         paiement.save(user=request.user)
         # --- LOGIQUE D'ENVOI D'E-MAIL AU CLIENT ---

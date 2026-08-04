@@ -5,8 +5,8 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
-# from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from phonenumber_field.modelfields import PhoneNumberField
@@ -227,39 +227,36 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
         self.full_clean()
         super().save(*args, **kwargs)
 
+
     @property
     def date_disponibilite_prevue(self):
-        """
-        Calcule dynamiquement la date à laquelle le bureau sera libéré.
-        Retourne None si le bureau est déjà DISPONIBLE.
-        """
         if self.statut == self.BureauStatus.DISPONIBLE:
             return None
 
         aujourdhui = timezone.now().date()
 
-        # On cherche la réservation active en cours sur ce bureau
         reservation_en_cours = (
-            self.reservations.filter(
-                is_active=True, date_debut__lte=aujourdhui, date_fin__gte=aujourdhui
-            )
+            self.reservations.filter(is_active=True, date_debut__lte=aujourdhui)
+            .filter(Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True))
             .order_by("-date_fin")
             .first()
         )
+        if reservation_en_cours:
+            if reservation_en_cours.date_fin:
+                return reservation_en_cours.date_fin + timedelta(days=1)
+            return None  # durée indéterminée : pas de date connue, c'est normal
 
-        if reservation_en_cours and reservation_en_cours.date_fin:
-            # Le lendemain de la fin de la réservation, le bureau est libre
-            return reservation_en_cours.date_fin + timedelta(days=1)
-
-        # Si pas de réservation mais statut occupé (ex: contrat direct)
+        # On couvre bureau direct ET bureau via réservation convertie
         contrat_en_cours = (
-            self.contrats_directs.filter(
-                is_active=True, date_debut__lte=aujourdhui, date_fin__gte=aujourdhui
+            Contrat.objects.filter(
+                Q(bureau=self) | Q(reservation__bureau=self),
+                is_active=True,
+                date_debut__lte=aujourdhui,
             )
+            .filter(Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True))
             .order_by("-date_fin")
             .first()
         )
-
         if contrat_en_cours and contrat_en_cours.date_fin:
             return contrat_en_cours.date_fin + timedelta(days=1)
 
@@ -632,6 +629,44 @@ class Location(BaseModel):  # Hérite désormais de BaseModel
         super().save(*args, **kwargs)
 
 
+def synchroniser_bureaux_expires():
+    """
+    Repasse à DISPONIBLE tous les bureaux OCCUPE dont plus aucune réservation
+    ni aucun contrat n'est effectivement en cours aujourd'hui.
+    Appelée à la volée à chaque listing des bureaux/réservations/contrats.
+    """
+    aujourdhui = timezone.now().date()
+    bureaux_occupes = Bureau.objects.filter(statut=Bureau.BureauStatus.OCCUPE)
+
+    for bureau in bureaux_occupes:
+        reservation_en_cours = bureau.reservations.filter(
+            is_active=True,
+            statut=Reservation.ReservationStatus.VALIDEE,
+            date_debut__lte=aujourdhui,
+        ).filter(
+            Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True)
+        ).exists()
+
+        if reservation_en_cours:
+            continue
+
+        contrat_en_cours = Contrat.objects.filter(
+            Q(bureau=bureau) | Q(reservation__bureau=bureau),
+            is_active=True,
+            statut=Contrat.ContratStatus.VALIDE,
+            date_debut__lte=aujourdhui,
+        ).filter(
+            Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True)
+        ).exists()
+
+        if contrat_en_cours:
+            continue
+
+        bureau.statut = Bureau.BureauStatus.DISPONIBLE
+        bureau.save()
+
+
+
 class Paiement(BaseModel):  # Hérite désormais de BaseModel
     class PaiementStatus(models.TextChoices):
         PENDING = "PENDING", _("En attente")
@@ -657,10 +692,11 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
     id = models.AutoField(primary_key=True)
     montant = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateTimeField(auto_now_add=True)
-
     mois_paye = models.IntegerField(choices=CHOIX_MOIS, null=True, blank=False)
     annee_paye = models.IntegerField(default=2026, null=True, blank=False)
-
+    
+    compte_bancaire = models.CharField(max_length=50, null=True, blank=True)
+    document_bancaire = models.ImageField( upload_to="clients/recu/", blank=True, null=True)
     mode = models.CharField(
         max_length=20,
         choices=[

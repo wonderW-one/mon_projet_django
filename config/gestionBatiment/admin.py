@@ -219,6 +219,8 @@ class PaiementAdmin(admin.ModelAdmin):
         "contrat",
         "location",
         "date",
+        "compte_bancaire",
+        "document_bancaire",
     )
     search_fields = (
         "client__user__first_name",

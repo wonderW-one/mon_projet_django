@@ -359,6 +359,7 @@ class ContratSerializer(serializers.ModelSerializer):
     statut = serializers.ChoiceField(
         choices=Contrat.ContratStatus.choices, read_only=True
     )
+    statut_temporel = serializers.ReadOnlyField()
     periodicite_display = serializers.CharField(
         source="get_periodicite_display", read_only=True
     )
@@ -386,6 +387,7 @@ class ContratSerializer(serializers.ModelSerializer):
             "bureau_detail",
             "reservation_detail",
             "statut",
+            "statut_temporel",
             "date_debut",
             "date_fin",
             "date_paiement",
@@ -562,7 +564,7 @@ class ReservationSerializer(serializers.ModelSerializer):
     statut = serializers.ChoiceField(
         choices=Reservation.ReservationStatus.choices, read_only=True
     )
-
+    statut_temporel = serializers.ReadOnlyField()
     # 🔴 BUG CORRIGÉ : sans ceci, le champ 'client' restait toujours obligatoire
     # dans le payload JSON. Or la vue (ReservationViewSet.perform_create) ne le
     # transmet en dur (client=profile) QUE pour un CLIENT — mais cette injection
@@ -592,6 +594,7 @@ class ReservationSerializer(serializers.ModelSerializer):
             "client_detail",
             "bureau_detail",
             "statut",
+            "statut_temporel",
             "created_at",
             "updated_at",
             "is_active",
@@ -779,6 +782,8 @@ class PaiementSerializer(serializers.ModelSerializer):
             "statut",
             "mois_paye",
             "annee_paye",
+            "compte_bancaire",
+            "document_bancaire",
             "created_by",
             "created_at",
             "updated_at",
