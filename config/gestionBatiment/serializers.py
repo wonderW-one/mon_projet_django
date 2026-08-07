@@ -502,12 +502,16 @@ class ContratSerializer(serializers.ModelSerializer):
 
         if "date_fin" in attrs and date_fin and date_fin < aujourdhui:
             raise serializers.ValidationError(
-                {"date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."}
+                {
+                    "date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."
+                }
             )
 
         if date_debut and date_fin and date_fin < date_debut:
             raise serializers.ValidationError(
-                {"date_fin": "La date de fin doit être postérieure ou égale à la date de début."}
+                {
+                    "date_fin": "La date de fin doit être postérieure ou égale à la date de début."
+                }
             )
 
         return attrs
@@ -565,6 +569,7 @@ class ReservationSerializer(serializers.ModelSerializer):
         choices=Reservation.ReservationStatus.choices, read_only=True
     )
     statut_temporel = serializers.ReadOnlyField()
+
     # 🔴 BUG CORRIGÉ : sans ceci, le champ 'client' restait toujours obligatoire
     # dans le payload JSON. Or la vue (ReservationViewSet.perform_create) ne le
     # transmet en dur (client=profile) QUE pour un CLIENT — mais cette injection
@@ -667,12 +672,16 @@ class ReservationSerializer(serializers.ModelSerializer):
 
         if "date_fin" in attrs and date_fin and date_fin < aujourdhui:
             raise serializers.ValidationError(
-                {"date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."}
+                {
+                    "date_fin": "La date de fin ne peut pas être antérieure à aujourd'hui."
+                }
             )
 
         if date_debut and date_fin and date_fin < date_debut:
             raise serializers.ValidationError(
-                {"date_fin": "La date de fin doit être postérieure ou égale à la date de début."}
+                {
+                    "date_fin": "La date de fin doit être postérieure ou égale à la date de début."
+                }
             )
 
         return attrs
@@ -789,15 +798,14 @@ class PaiementSerializer(serializers.ModelSerializer):
             "updated_at",
             "is_active",
         ]
-        read_only_fields = [
-            "created_by",
-            "statut",
-            "created_at",
-            "updated_at",
-            "is_active",
-            "date",
-        ]
-
+    read_only_fields = [
+                "created_by",
+                "statut",
+                "created_at",
+                "updated_at",
+                "is_active",
+                "date",
+            ]
     def get_client_detail(self, obj):
         if obj.client:
             return {
@@ -857,6 +865,31 @@ class PaiementSerializer(serializers.ModelSerializer):
                 }
             )
 
+        # ✅ AJOUT : selon le mode de règlement choisi, un champ complémentaire
+        # devient obligatoire. CARD -> numéro de compte (pré-rempli côté client
+        # lors des paiements suivants) ; TRANSFER -> justificatif (reçu bancaire).
+        mode = attrs.get("mode") or (self.instance.mode if self.instance else None)
+        compte_bancaire = attrs.get("compte_bancaire") or (
+            self.instance.compte_bancaire if self.instance else None
+        )
+        document_bancaire = attrs.get("document_bancaire") or (
+            self.instance.document_bancaire if self.instance else None
+        )
+
+        if mode == "CARD" and not compte_bancaire:
+            raise serializers.ValidationError(
+                {
+                    "compte_bancaire": "Le numéro de compte est obligatoire pour un paiement par carte bancaire."
+                }
+            )
+
+        if mode == "TRANSFER" and not document_bancaire:
+            raise serializers.ValidationError(
+                {
+                    "document_bancaire": "Le reçu bancaire justifiant le virement est obligatoire."
+                }
+            )
+
         return attrs
 
     def create(self, validated_data):
@@ -878,6 +911,7 @@ class PaiementSerializer(serializers.ModelSerializer):
                         pass
             elif location:
                 if hasattr(location, "client"):
+
                     validated_data["client"] = location.client
                 elif isinstance(location, int):
                     try:
@@ -890,7 +924,6 @@ class PaiementSerializer(serializers.ModelSerializer):
         paiement = Paiement(**validated_data)
         paiement.save(user=user)
         return paiement
-
     def update(self, instance, validated_data):
         user = validated_data.pop("user", None)
         for attr, value in validated_data.items():

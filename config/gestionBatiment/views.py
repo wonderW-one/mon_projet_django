@@ -523,7 +523,48 @@ class ContratViewSet(BaseModelViewSet):
             bureau.statut = Bureau.BureauStatus.OCCUPE
             bureau.save()
 
-        serializer = self.get_serializer(contrat)
+        # 🔴 BUG CORRIGÉ : ce bloc d'envoi d'e-mail se trouvait auparavant APRÈS un
+        # premier "return Response(...)" — il était donc du code mort, jamais
+        # exécuté. Le client ne recevait donc jamais l'e-mail de confirmation de
+        # contrat. On l'exécute maintenant avant la réponse finale.
+        try:
+            # 1. Récupération des informations du client et du paiement
+            email_client = contrat.client.user.email
+            nom_client = (
+                contrat.client.user.first_name or contrat.client.user.username
+            )
+            date_debut = contrat.date_debut
+            date_fin = contrat.date_fin
+            periodicite = contrat.periodicite
+            montant = contrat.montant
+            if email_client:  # On s'assure que le client a bien une adresse mail
+                sujet = f"Confirmation de votre contrat de location du {date_debut} a {date_fin}"
+
+                corps_email = (
+                    f"Bonjour {nom_client},\n\n"
+                    f"Nous vous confirmons la validation du contrat de location.\n\n"
+                    f"Détails du contrat :\n"
+                    f"– Date debut : {date_debut}\n"
+                    f"– Date fin : {date_fin}\n"
+                    f"– Periodicite : {periodicite}\n"
+                    f"– Montant totale : {montant}\n\n"
+                    f"Merci pour votre confiance.\n"
+                    f"L'équipe de gestion."
+                )
+
+                send_mail(
+                    sujet,
+                    corps_email,
+                    settings.EMAIL_HOST_USER,  # Votre adresse d'expédition configurée
+                    [email_client],  # L'adresse du client
+                    fail_silently=False,  # True évite de bloquer l'API si le serveur d'envoi d'e-mail a un problème
+                )
+        except Exception as e:
+            logger.error(e)
+            # Optionnel : logguez l'erreur ici si l'envoi échoue pour ne pas bloquer la validation
+
+        # ------------------------------------------
+
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="rejeter-contrat")

@@ -1,6 +1,7 @@
 from django.core.management.base import BaseCommand
 from gestion.models import synchroniser_bureaux_expires  # adapte le nom de l'app
 
+
 class Command(BaseCommand):
     help = "Libère manuellement les bureaux dont le contrat/réservation est expiré."
 

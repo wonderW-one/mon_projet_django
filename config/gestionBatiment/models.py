@@ -227,7 +227,6 @@ class Bureau(BaseModel):  # Hérite désormais de BaseModel
         self.full_clean()
         super().save(*args, **kwargs)
 
-
     @property
     def date_disponibilite_prevue(self):
         if self.statut == self.BureauStatus.DISPONIBLE:
@@ -639,32 +638,35 @@ def synchroniser_bureaux_expires():
     bureaux_occupes = Bureau.objects.filter(statut=Bureau.BureauStatus.OCCUPE)
 
     for bureau in bureaux_occupes:
-        reservation_en_cours = bureau.reservations.filter(
-            is_active=True,
-            statut=Reservation.ReservationStatus.VALIDEE,
-            date_debut__lte=aujourdhui,
-        ).filter(
-            Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True)
-        ).exists()
+        reservation_en_cours = (
+            bureau.reservations.filter(
+                is_active=True,
+                statut=Reservation.ReservationStatus.VALIDEE,
+                date_debut__lte=aujourdhui,
+            )
+            .filter(Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True))
+            .exists()
+        )
 
         if reservation_en_cours:
             continue
 
-        contrat_en_cours = Contrat.objects.filter(
-            Q(bureau=bureau) | Q(reservation__bureau=bureau),
-            is_active=True,
-            statut=Contrat.ContratStatus.VALIDE,
-            date_debut__lte=aujourdhui,
-        ).filter(
-            Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True)
-        ).exists()
+        contrat_en_cours = (
+            Contrat.objects.filter(
+                Q(bureau=bureau) | Q(reservation__bureau=bureau),
+                is_active=True,
+                statut=Contrat.ContratStatus.VALIDE,
+                date_debut__lte=aujourdhui,
+            )
+            .filter(Q(date_fin__gte=aujourdhui) | Q(date_fin__isnull=True))
+            .exists()
+        )
 
         if contrat_en_cours:
             continue
 
         bureau.statut = Bureau.BureauStatus.DISPONIBLE
         bureau.save()
-
 
 
 class Paiement(BaseModel):  # Hérite désormais de BaseModel
@@ -694,9 +696,14 @@ class Paiement(BaseModel):  # Hérite désormais de BaseModel
     date = models.DateTimeField(auto_now_add=True)
     mois_paye = models.IntegerField(choices=CHOIX_MOIS, null=True, blank=False)
     annee_paye = models.IntegerField(default=2026, null=True, blank=False)
-    
+
     compte_bancaire = models.CharField(max_length=50, null=True, blank=True)
-    document_bancaire = models.ImageField( upload_to="clients/recu/", blank=True, null=True)
+    # 🔴 BUG CORRIGÉ : était un ImageField, qui rejette (ValidationError Pillow)
+    # tout fichier qui n'est pas une image "ouvrable" — donc un reçu bancaire au
+    # format PDF (très courant) était systématiquement refusé. On passe en
+    # FileField, comme document_contrat_signe sur Contrat, pour accepter à la
+    # fois images et PDF.
+    document_bancaire = models.FileField(upload_to="clients/recu/", blank=True, null=True)
     mode = models.CharField(
         max_length=20,
         choices=[

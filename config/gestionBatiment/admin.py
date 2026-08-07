@@ -171,7 +171,9 @@ class ContratAdmin(admin.ModelAdmin):
         "date_fin",
         "date_paiement",
         "montant",
+        "statut",
         "statut_temporel",
+        "document_contrat_statut",
         "is_active",
     )
     search_fields = (
@@ -180,8 +182,35 @@ class ContratAdmin(admin.ModelAdmin):
         "reservation__bureau__numero",
         "bureau__numero",
     )
-    list_filter = ("is_active", "date_debut", "date_fin", "periodicite")
+    list_filter = ("is_active", "statut", "date_debut", "date_fin", "periodicite")
     readonly_fields = ("montant",)
+    # AJOUT : place explicite pour déposer le document de contrat signé (PDF/scan)
+    # une fois le contrat approuvé (statut = VALIDE). Le champ est un simple
+    # FileField du modèle, donc apparaît nativement dans le formulaire d'admin ;
+    # on l'ajoute ici en fin de fieldsets pour qu'il soit visible sans avoir à
+    # chercher, avec une description d'aide.
+    fields = (
+        "client",
+        "reservation",
+        "bureau",
+        "statut",
+        "periodicite",
+        "date_debut",
+        "date_fin",
+        "date_paiement",
+        "montant",
+        "description",
+        "document_contrat_signe",
+        "is_active",
+    )
+
+    @admin.display(description="Document de contrat")
+    def document_contrat_statut(self, obj):
+        if obj.document_contrat_signe:
+            return "📄 Déposé"
+        if obj.statut == Contrat.ContratStatus.VALIDE:
+            return "⚠️ Manquant"
+        return "—"
 
 
 @admin.register(Location)
